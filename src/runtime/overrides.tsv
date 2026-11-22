@@ -1,0 +1,110 @@
+# Guest functions that are not translated but covered (read by ff xrc for its coverage report):
+#   manual       a hand-written replacement in src/runtime/ovr_*.c (the runtime's xrc_manual_* tables)
+#   wrapped      translated, but replaced in the dispatcher by a hand-written function that falls back to the
+#                translation (so no translation calls it directly)
+#   fast         translated (the reference), but replaced by a hand-written xo_<addr> (src/runtime/ovr_simd.c) that
+#                the translations call directly and the dispatcher maps to
+#   unreachable  reached only from replaced functions / dead code (the runtime still stops with the override reason
+#                if one is ever dispatched)
+# address	kind	name / why
+0100eed4	manual	__libm_sse2_sin
+0100f5a2	manual	__libm_sse2_cos
+0100f75a	manual	__CIatan2
+0100f770	manual	cos
+0100f7b0	manual	__CIcos
+0100f7ff	manual	cos (x87 entry)
+0100f8a0	manual	sin
+0100f8e0	manual	__CIsin
+0100f92f	manual	sin (x87 entry)
+0100fd40	manual	_ftol2_sse
+0100fd76	manual	_ftol2
+010108a0	manual	__CIsqrt
+01012f2a	manual	__CIfmod
+01013b90	manual	__CIacos
+01013df0	manual	__CIpow
+010153b0	manual	__CIlog
+010154fc	manual	__CIexp
+01015590	manual	__CIatan
+0101f110	manual	tan
+0101f150	manual	__CItan
+01026fac	manual	__set_statfp_raise
+01011d90	wrapped	qsort (ovr_crt_sort.c: native for known comparators)
+00e8d220	wrapped	the frame pacer tick (ovr_game.c: XRC_FRAME_LIMIT builds replace it)
+00e8d560	wrapped	the main thread's frame wait (ovr_game.c: XRC_FRAME_LIMIT builds release it at once if due)
+0100f808	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0100f938	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+010108bd	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+01012f34	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+01013be8	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+01013e4d	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+01014012	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+01015408	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+010155e8	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101d5dc	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101d5e5	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101d620	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101d65e	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101d69b	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101d6e3	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101d6ea	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101d831	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101d864	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101d8c0	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101d8de	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101da70	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101dad7	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101dc33	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101dc40	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101dc6c	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101dc85	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101dceb	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101dd29	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101ddd0	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101dde7	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101de30	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101de4e	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0101f19f	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+010243f6	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+010245fc	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+01026090	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+01027080	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+01028200	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+01028470	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+01028730	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0102e610	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+0106be30	unreachable	CRT math internal (x87 dispatch / error handling), reached only from the entry points in ovr_crt_math.c
+004559b0	fast	Matrix44::Transform (ovr_simd.c)
+00455840	fast	Vec4::operator= (ovr_simd.c)
+00455880	fast	Vec4::Get (ovr_simd.c)
+004586c0	fast	Aabb::Extended (ovr_simd.c)
+00710860	fast	Vec4::Dot4 (ovr_simd.c)
+00711f40	fast	Matrix33::Transform (ovr_simd.c)
+00455f00	fast	Matrix44::Transform(m128) (ovr_simd.c)
+004584c0	fast	Matrix44::TransformPoint (ovr_simd.c)
+00455d80	fast	Matrix44::Get (ovr_simd.c)
+00462f80	fast	Matrix44::operator= (ovr_simd.c)
+00d785d0	fast	the collision broadphase's BVH build step (ovr_bvh.c)
+00c77820	fast	zlib inflate_fast: the translation, run without the GIL (ovr_unlocked.c)
+00457e50	fast	Aabb::Transformed (ovr_simd.c)
+00456970	fast	Matrix44::Mul (ovr_simd.c)
+00743c70	fast	Quat::Mul (ovr_simd.c)
+00744160	fast	QuatToMatrix (ovr_simd.c)
+00517130	fast	QuatToMatrix2 (ovr_simd.c)
+00515c00	fast	Quat::FromMatrix33 (ovr_simd.c)
+00e8d5a0	fast	frame due: a minimum of idle work per frame (ovr_game.c)
+00744820	fast	IsXInputDevice: true for the runtime's XInput pads (ovr_input.c)
+00809600	fast	the Settings menu's row list: + the PC Graphics row (ovr_config_menu.c)
+0080d0a0	fast	the Settings menu's confirm: the PC Graphics row opens the runtime's overlay (ovr_config_menu.c)
+007a4550	fast	the UI text lookup by key: the PC Graphics row's strings (ovr_config_menu.c)
+00cf1ce0	manual	_ftol2_sse (hle_msvcr100.c xrc_manual_lr_crt)
+00cf1d16	manual	_ftol2 (hle_msvcr100.c xrc_manual_lr_crt)
+00de8000	manual	Miles CPU probe, MSSMIXER section: answers no MMX / SSE (hle_lr.c)
+00c18810	manual	Miles double buffer read, pause spin (ovr_miles.c)
+00c17f60	unreachable	Miles MMX sample converter: picked only when the CPU probe 00de8000 says SSE2 (it says no)
+00c180e0	unreachable	Miles MMX sample converter: picked only when the CPU probe 00de8000 says SSE2 (it says no)
+00c1e430	unreachable	Miles SSE2 mixer (pslldq): the picker 00c1f1b0 is told no SSE2 (hle_lr.c IsProcessorFeaturePresent)
+00c1e980	unreachable	Miles SSE2 mixer (pslldq): the picker 00c1f1b0 is told no SSE2 (hle_lr.c IsProcessorFeaturePresent)
+004e6d2c	unreachable	data: a byte table read by 004e63bc (movzbl 0x4e6d2c(%edi))
+0078b000	unreachable	data: a byte table read by 0078ae98
+0062914e	unreachable	not code (no references; decodes as junk)
+006c6c65	unreachable	not code (no references; decodes as junk)

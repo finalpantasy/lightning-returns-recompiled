@@ -1,0 +1,53 @@
+# build outputs
+out/
+*.o
+*.obj
+*.exe
+*.dll
+*.err
+*.log
+*.pickle
+__pycache__/
+*.pyc
+# translator output: generated from your own copy of the game, never committed
+page_*.c
+xrc_table.c
+match_table.o
+xrc_gen/
+gen/
+ovr_math_gen.inc
+build/win/
+# game files and derived data
+*.unpacked.exe
+LRFF13.exe
+ffxiiiimg*
+weiss_data/
+*.dds
+*.gtex
+*.bik
+*.b2*
+*.spv
+tex_dump*/
+tex_hd*/
+# saves, configs, caches
+save_backup_*/
+lrff13-*.dat
+lr.cfg
+vk_pipelines.bin
+names.tsv
+names_xref.tsv
+xrc_coverage*.tsv
+# ghidra and wheels
+ghidra/
+*.gpr
+*.whl
+# models and third-party binaries
+*.pth
+*.safetensors
+*.onnx
+venv/
+# screenshots/captures of the game: add real ones deliberately with git add -f under docs/screenshots/
+*.png
+!docs/screenshots/*.png
+# local staging notes
+STAGING_NOTES.md

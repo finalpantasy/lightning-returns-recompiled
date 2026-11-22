@@ -1,0 +1,353 @@
+# address	name	confidence	(hand-curated: runtime source comments, overrides.tsv, memory notes)
+# LR addresses only. The runtime ovr_game.c / ovr_simd.c / ovr_bvh.c / ovr_crt_sort.c / ovr_unlocked.c comments are FFXIII addresses (not applied in XRC_LR builds).
+00744820	Input::IsXInputDevice	high
+00744e00	Input::AddDirectInputDevice	med
+00745440	Input::EnumDevicesCallback	high
+00745650	Input::PollXInputPads	high
+00744d50	Input::BumpDeviceChangeCounter	med
+007439f0	Input::OnDeviceChange	low
+00747100	Input::RescanControllers	med
+00de8000	Miles::CpuProbe	high
+00c1f1b0	Miles::PickMixer	high
+00c18810	Miles::DoubleBufferRead	high
+00c17f60	Miles::ConvertSamplesMMX_a	med
+00c180e0	Miles::ConvertSamplesMMX_b	med
+00c17e80	Miles::ConvertSamplesC_a	med
+00c17db0	Miles::ConvertSamplesC_b	med
+00c1e430	Miles::MixSSE2_a	med
+00c1e980	Miles::MixSSE2_b	med
+00cf1ce0	_ftol2_sse	high
+00cf1d16	_ftol2	high
+00a03700	SteamApi::Wrapper	med
+00747c50	FileStream::ReadAll	high
+007488f0	FileStream::LoadFile	med
+007498a0	crt::fread	low
+00751ea0	crt::_read	low
+007521d0	crt::_read_nolock	low
+0074c590	crt::lowio_ReadFile	med
+007478a0	FileStream::GetFileSize	med
+00426fa0	Dlc::LoadFilelist	med
+0093ff60	Dlc::ScanLoop	low
+004b68e0	WorkerThread::Run	low
+00725720	Thread::EntryStub	med
+00432200	AppGame::InitializeResources	med
+0075dc40	operator delete	high
+00425cc0	operator delete_heap	med
+0075dbc0	operator new	high
+0075db80	operator new_local	med
+0075dc10	operator new_heap	med
+0075db50	operator new_heap2	low
+0075db30	aligned_malloc_regs	med
+0075db40	crt_aligned_free	med
+00b453c0	MemoryHeap::Free	med
+00b454a0	MemoryHeap::Alloc	med
+0074ac50	white::io::FileControllerMethodImage::DecodeThread	med
+00749990	white::io::FileController::IoThread	low
+00726a50	white::Semaphore::Wait	med
+00a02200	SQEX::Common::Thread::Create	med
+00a02180	SQEX::Common::Thread::StartRoutine	med
+00a02d90	SQEX::Common::Timer::ThreadMain	med
+00a02d70	SQEX::Common::Timer::TimeProc	med
+00a02e80	SQEX::Common::Timer::Timer	med
+00a02eb0	SQEX::Common::Timer::~Timer	med
+00a02d40	SQEX::Common::Timer::Stop	low
+00a020e0	GetCurrentThreadId_w	med
+00d12910	Framework::WndProc	med
+00abbd60	Storage::WorkerThread	low
+00429340	AppGame::LoaderThreadA	low
+004292e0	AppGame::LoaderThreadB	low
+00a99f60	RenderInterface::D3d9::CreateDevice	med
+00acaf60	Framework::ReadGraphicsConfig	med
+00cdde70	Movie::BinkPlayer::Open	med
+00cdd910	Movie::BinkInit	med
+00a04060	Steam::Init	high
+00a04250	Steam::Shutdown	high
+00756120	white::io::OpenFile	low
+00a02f40	SQEX::Common::Timer::Start	med
+004317c0	AppGame::FrameStep	low
+0042e2c0	AppGame::WaitFrame	low
+00666a70	Scene::UpdateDebugCameraToggle	high
+00669850	Scene::GetActiveCamera	high
+00671b20	SceneCameraControlByDebugPad::Create	high
+00671be0	Scene::CreateDefaultCamera	med
+0070b3a0	SceneCameraControlByDebugPad::Update	high
+00668960	Scene::UpdateObjectControl	med
+00742750	Hid::Initialize	med
+00429cc0	AppGame::OnFocusLost	high
+00429da0	AppGame::OnFocusGained	high
+00ccea50	ReturnFalse_ICF	high
+00d65440	ReturnTrue_ICF	high
+00771040	debug::terminal::CreateTerminal	med
+0076add0	debug::CreateScallionDesktop	med
+# hot helpers (2026-11-20b, static read of the translator disassembly)
+00cf193c	CRT::__security_check_cookie	high
+00cf181a	CRT::__ehvec_dtor	high
+00cf195e	CRT::__ehvec_ctor	high
+00726e70	white::Mutex::Lock	high
+00726ea0	white::Mutex::Unlock	high
+007268b0	white::Mutex::WaitRaw	high
+007268d0	white::Mutex::ReleaseRaw	high
+00402660	white::math::Matrix4x4::SetIdentity	high
+00435730	white::util::StrLen	high
+0084ce30	white::gui::GuiObject::operator delete	med
+00792db0	white::gui::GuiObject::operator new	med
+007b6a70	white::gui::GuiObject::Free	med
+007b6b70	white::gui::GuiObject::Alloc	med
+007baec0	white::gui::GuiString::ctor	med
+007baee0	white::gui::GuiString::Free	med
+007bb4f0	white::gui::GuiString::Assign	med
+0076a260	white::debug::PrintfWithFile	med
+0076a570	white::debug::Printf	med
+00a410e0	nullsub_ret	med
+00584950	white::Variant::FreePooled	med
+00584a20	white::Variant::FreePooled_thunk	med
+004c70f0	white::Variant::FreeHeap	med
+00c22480	SQEX::CDev::Engine::Vfx::Common::Io::Printer::GetInstance	med
+00c225e0	SQEX::CDev::Engine::Vfx::Common::Io::Printer::Printf	med
+00c22760	SQEX::CDev::Engine::Vfx::Common::Memory::Free	med
+00c228e0	SQEX::CDev::Engine::Vfx::Common::Memory::Alloc	med
+004012a0	white::FixedString16::ctor_cstr	med
+00435830	white::util::FormatToBuffer	med
+004356e0	white::util::StrCopyN	med
+00439370	white::math::Vector4::SetZero	med
+0040ab00	white::math::Vector4::Normalize	med
+0040ac50	white::math::Matrix4x4::Assign	med
+00408210	white::math::Matrix4x4::TransformVector4	med
+0040acb0	white::math::Matrix4x4::Multiply	med
+007a2690	white::gui::GuiManager::Lock	med
+007a26a0	white::gui::GuiManager::Unlock	med
+0096fd70	white::effect::EffectManager::Unlock	med
+00431df0	std::vector::_Tidy	med
+00a5e960	std::string::_Tidy	med
+00566b70	white::util::IntrusiveList::PushBack	med
+004281e0	white::util::ListNode::Unlink	med
+008ef180	white::util::RefPtr::Release	med
+00acec50	white::util::ScopedPtr::Delete	med
+0065d970	white::Scene::GetObjectByHandle	med
+005130e0	white::battle::CharaTable::GetByIndex	med
+004c24b0	white::battle::CharaRef::Resolve	med
+0084d700	white::gui::GuiProduct::~GuiProduct	med
+0084d9e0	white::gui::GuiProduct::GuiProduct	med
+0087f960	white::gui::GuiComponent::ctor	med
+00a15590	SQEX::CDev::Engine::Common::ISceneObject::IClip::ctor	med
+00a15530	SQEX::CDev::Engine::Cut::Scheduler::ClipBase::ctor	med
+00b07a00	SQEX::CDev::Engine::Lay::Stella::LayoutMemoryObject::ctor	med
+00486000	SQEX::CDev::Engine::Memory::Alternative::Handle::~Handle	med
+007936e0	white::gui::GuiActionObject::FindSlotByKey	med
+00a96590	FrameLimiter::WaitQpcSleep	med
+00cf1a20	_aulldiv	high
+00ac3040	FrameClock::WaitForFrame	med
+00ac33b0	FrameClock::GetQuantizedDelta	med
+00ac2fe0	FrameClock::SetTargetFps	med
+00ac4bd0	ApplicationConfiguration::ApplicationConfiguration	med
+00ac4b40	ApplicationConfiguration::GetMinFps	med
+00ab93f0	Framework::TickFrame	med
+005cef80	FieldObjectManager::Update	med
+005e3c00	FieldWorldTimer::Update	med
+005e2ff0	FieldWorldTimer::GetWorldTime	med
+005e3110	FieldWorldTimer::SetBaseTime	med
+005e3190	FieldWorldTimer::AddTimeOffset	med
+005e2bb0	FieldWorldTimer::GetHour	med
+005e2ca0	FieldWorldTimer::GetMinute	med
+005e2d90	FieldWorldTimer::GetSecond	med
+
+# hot functions 2 (profile prof_P1, 2026-11-21)
+00a96750	RenderInterface::D3d9::DrawIndexedPrimitiveByPrimType	high
+00a98b80	RenderInterface::D3d9::DrawPrimitiveUPByPrimType	med
+00a92240	RenderInterface::D3d9::FillStreamSourceTable	med
+0075fe80	RenderInterface::D3d9::ApplyStreamSourceTable	med
+0075e1d0	RenderInterface::D3d9::SetSamplerFilterAndLodBias	high
+0075e2b0	RenderInterface::D3d9::SetSamplerAddressModes	med
+00416020	white::math::SinCos4	med
+00416140	white::math::Quaternion::Multiply	high
+00416250	white::math::Quaternion::FromEuler	med
+004164f0	white::math::Quaternion::ToMatrix	med
+00416a30	white::animation::JointExpressionController::GetRotationQuat	low
+00aac130	SQEX::CDev::Engine::Fw::SceneObject::Transform::ComposeLocalToWorld	low
+005a44e0	white::math::Matrix4x4::Transpose	high
+0040b1e0	white::math::Matrix4x4::CopyTo	med
+00437270	white::math::Matrix4x4::MakeTranslation	med
+00408320	white::math::Matrix4x4::Inverse	med
+004bb0b0	white::math::Aabb::ExpandByPoint	med
+004bb1c0	white::math::Aabb::TransformByMatrix	low
+004bad10	white::math::Vector4::MulComponents	med
+00a479f0	SQEX::CDev::Engine::Dw::Renderer::DrawTagList::DispatchAll	low
+00a6d8b0	SQEX::CDev::Engine::Dw::Renderer::DrawBatch::CallVf2ForEach	low
+00a7e1b0	SQEX::CDev::Engine::Dw::Renderer::DrawBatch::FindSlotByMaterialKey	low
+00a6d130	SQEX::CDev::Engine::Dw::Renderer::IndexedBatch::Draw	low
+00a8d300	SQEX::CDev::Engine::Dw::Renderer::MeshDrawTag::ApplySamplerStates	low
+00a5f540	SQEX::CDev::Engine::Dw::Renderer::MeshDrawTag::BindMaterialSamplers	low
+00a015b0	SQEX::CDev::Engine::Fw::Framework::SpinLockList::MoveToBucket	low
+00a01a00	SQEX::CDev::Engine::Fw::Framework::FrameJobScheduler::Run	low
+00d5fc80	SQEX::CDev::Engine::Sync::EventHandshake::WaitAndSignal	low
+00c46a30	SQEX::CDev::Engine::Vfx::Qix::Node::QixDrawTag::DispatchAndClearDirty	low
+00a412b0	SQEX::CDev::Engine::Dw::Renderer::ModelInstanceNode::MeshInfo::IsCulledByFrustum	med	names3 fix, was ComputeBoundsCorners: ecx is a MeshInfo (a41570 loop passes the batch ptr, reads +0x22 never-cull byte), builds 2 AABB corners, frustum test, returns 1 = culled
+00a45890	SQEX::CDev::Engine::Dw::Renderer::MeshDrawTag::SetupWorldMatrixConstants	low
+00a46c20	SQEX::CDev::Engine::Dw::Renderer::ModelInstanceNode::DrawBatchA	low
+00a47100	SQEX::CDev::Engine::Dw::Renderer::ModelInstanceNode::DrawBatchB	low
+00a41cb0	SQEX::CDev::Engine::Dw::Renderer::ModelInstanceNode::UpdateWorldBounds	low
+00a6ab50	SQEX::CDev::Engine::Dw::Renderer::Culling::AabbViewTest_a6ab50	low
+00a490b0	SQEX::CDev::Engine::Dw::Renderer::Culling::AabbViewTest_a490b0	low
+00a2ada0	SQEX::CDev::Engine::Dw::Animation::SamplePose	low
+00794470	white::gui::GuiActionObject::UpdateTransformAndLayout	med	names5: 893 insns; sole caller UpdateTree 00795660 (high); calls AdvanceActionTimers 007931e0 (high), Matrix4x4 SetIdentity/FromEuler/MakeTranslation/Invert/Multiply and Vector4 AddAssign/MulComponents (builds local/world matrix from action pos/rot/scale), handler 008a76b0; name from 2026-11-21 hot pass kept, conf raised
+0097a2d0	white::effect::LerpColorTable16K	med
+00a525c0	SQEX::CDev::Engine::Fw::Framework::Draw::FrameworkDrawManager::ExecuteDrawPass	low
+00a67080	SQEX::CDev::Engine::Dw::Renderer::ModelInstanceNode::CullAndBuildDrawList	low
+00a47d50	SQEX::CDev::Engine::Fw::Framework::Draw::FrameworkDrawManager::DrawVisibleTags	low
+00a36ac0	SQEX::CDev::Engine::Fw::Framework::Draw::FrameworkDrawManager::TimedDrawStage	low
+# --- UI and frame timing (ui_timing.md) ---
+00b55160	Phieg::PhysicsFrame::StepFromUnits	med
+00b54de0	Phieg::PhysicsFrame::StepIfDtNonzero	med
+00b54cb0	Phieg::PhysicsFrame::StepAll	med
+00b7d130	Phieg::PhysicsWorld::SetTimeStep	med
+00b54e40	Phieg::PhysicsFrame::Create_InitStep30	med
+00ab7570	Framework::ResetPhysicsTimeStep_59_94	med
+007b0470	white::gui::GuiManager::Update	high
+007a5050	white::gui::GuiManager::UpdateWidgetList	high
+0079fa70	white::gui::GuiInterface::Update_FromUnits	high
+0079faa0	white::gui::GuiInterface::UpdateWidgetList_FromUnits	high
+0079a2d0	white::gui::GuiApi::Update	high
+0079a2f0	white::gui::GuiApi::UpdateWidgetList	high
+00795660	white::gui::GuiActionObject::UpdateTree	high
+007931e0	white::gui::GuiActionObject::AdvanceActionTimers	high
+0084cf00	white::gui::GuiProduct::Update_DispatchByState	high
+00b02260	white::effect::EffectInterface::ApplyShadowConfig	med
+00b037f0	SQEX::CDev::Engine::Fw::Framework::Graphics::GraphicsManager::SetShadowRange(idx,f)	high
+00b03790	SQEX::CDev::Engine::Fw::Framework::Graphics::GraphicsManager::SetShadowParamB(idx,f)	med
+00b03870	SQEX::CDev::Engine::Fw::Framework::Graphics::GraphicsManager::SetShadowBlend	med
+00b03890	SQEX::CDev::Engine::Fw::Framework::Graphics::GraphicsManager::SetShadowFarScale	med
+00b03780	SQEX::CDev::Engine::Fw::Framework::Graphics::GraphicsManager::IsShadowEnabled	med
+00ac6b00	SQEX::CDev::Engine::Fw::Framework::Draw::FrameworkDrawManager::RunShadowAndMainPass	med
+0097ac10	white::effect::EffectInterface::EvaluateCurves	med
+0096d7a0	white::effect::EffectInterface::UpdateMs	med
+00a30d80	SQEX::CDev::Engine::Fw::Framework::Graphics::GraphicsManager::ctor	high
+00a412b0	SQEX::CDev::Engine::Dw::Renderer::ModelInstanceNode::IsBatchCulled(frustum,aabb) ret1=culled	med
+00a41570	SQEX::CDev::Engine::Dw::Renderer::ModelInstanceNode::DrawVisibleBatches (layer mask test + per-batch cull + DrawBatchA)	med
+00a38550	SQEX::CDev::Engine::Dw::Renderer::DrawableObject::DrawAllNodes (stride 0xd0, vf+0x3c per node)	med
+00a31990	SQEX::CDev::Engine::Fw::Framework::Graphics::GraphicsManager::SetCullFrustum(mat) (+0x1e4)	med
+00a32a00	SQEX::CDev::Engine::Dw::Renderer::DrawManager::DrawViews (sets cull frustum, runs draw layers)	med	names3 fix, class was FrameworkDrawManager: ecx = X = [FDM+0xc] (ac6040 passes it); X ctor a32460 builds GraphicsManager at X+0x6020 and stores X in 0x5107a04
+005a4ad0	white::math::FrustumTest::AabbVsMatrices	low
+00a49680	SQEX::CDev::Engine::Fw::Framework::Draw::FrameworkDrawManager::BuildCameraFrustum	low
+00a51650	SQEX::CDev::Engine::Fw::Framework::Draw::FrameworkDrawManager::AddShadowVolume(max 32 at +0x1ac)	low
+
+# render path / timing / file loading / math (2026-11-22, names3; 4th column = evidence; see analysis/recon/render_path.md)
+00a320d0	SQEX::CDev::Engine::Dw::Renderer::DrawManager::CountVisibleLayerNodes	med	X+0x600c layer ptr array, +0x6010 count (X = the big object built by ctor a32460, tag CDev.Dw.Renderer.DrMgr; embeds GraphicsManager at X+0x6020); sums (layer+0x24 - layer+0x20)>>2 over layers with visible byte +0x170; only caller aceb60 (DrawLayerManager::vf2), ecx=X=[DrawLayerManager+0xc]
+00a31bc0	SQEX::CDev::Engine::Dw::Renderer::DrawManager::BuildLayerViewLists	med	per visible layer (+0x170) calls AabbTree::BuildViewList a44cf0 on layer+0x34 with matrix X+0x6180 when [FDM+0x65e6] and [layer+0x171], else a44d50; callers ac5ee0/ac5f50 set GM+0x2f4/0x2f8 first
+00aceb60	SQEX::CDev::Engine::Fw::SceneObject::DrawLayer::DrawLayerManager::UpdateLayerVisibility(mask,outMask)	med	RTTI DrawLayerManager vtable 00df72a8 slot 2; loops spec list [this+8] (entry +4 layer idx, +5 bit, +0xc mask), vf9 test, writes X.layer[idx]+0x170 = visible, ORs 1<<bit into *outMask, then calls a320d0 on [this+0xc]
+00a44cf0	SQEX::CDev::Engine::Dw::Renderer::AabbTree::BuildViewList(withFrustum,matrix)	med	string CDev.Dw.Renderer.AabbTree in neighbors a44b10/a431a0/a43710; this+0x100 gather callback, +0x104 12-byte entry array, +0x114 count, +0x124 pointer vector (reserve a44990, resize a44c50); callers FDM a31bc0 and Vfx c275e0
+00a44d50	SQEX::CDev::Engine::Dw::Renderer::AabbTree::BuildViewListAll	low	called by a31bc0 in the no-frustum branch with one arg; calls a42f00/a44990/a44c50/a44aa0 like a44cf0 but no gather callback
+00a42f00	SQEX::CDev::Engine::Dw::Renderer::AabbTree::SortAndTrimEntries	med	qsort via IAT 0xde926c (base=this+0x104, n=this+0x114, size 12, cmp a42cf0), then drops trailing entries whose key == -1, sets +0x114/+0x118, clears byte +0x120
+00a42cf0	SQEX::CDev::Engine::Dw::Renderer::AabbTree::EntryCompare	low	qsort comparator passed by a42f00 (push 0xa42cf0)
+00a44990	std::vector<void*>::reserve(CDevAllocator)	med	string "vector<T> too long" (n > 0x3fffffff), capacity = (end-begin)>>2, allocates n*4 via allocator 0x5119ff4, copies, frees old; 4-byte elements
+00a44c50	std::vector<void*>::resize(CDevAllocator)	low	if size > n shrink, else append n-size zero-filled elements; this+0 begin, +4 end, +8 cap; uses a44aa0/a44800
+00a6c5b0	SQEX::CDev::Engine::Dw::Renderer::Culling::GatherVisibleRecursive	low	recursive (calls itself at a6c610), tests node via AabbViewTest a6ab50 when [node+0x70]&0x200, transforms AABB with Aabb::TransformByMatrix 4bb1c0, pushes 4-byte ptrs to this+4 vector (grow via a44aa0)
+00a384e0	SQEX::CDev::Engine::Dw::Renderer::DrawableObject::DrawAllNodes_NodeVf14	med	RTTI DrawableObject vtable 02110ac4 slot 7: same loop as slot 8 a38550 (stride 0xd0 over [this+0x178], count +0x17c) but calls node vtable +0x38 (ModelInstanceNode slot 14 a41470)
+00a385c0	SQEX::CDev::Engine::Dw::Renderer::DrawableObject::DrawAllNodes_NodeVf16	med	RTTI DrawableObject slot 9: same loop calling node vtable +0x40 (ModelInstanceNode slot 16 a41680)
+00a41410	SQEX::CDev::Engine::Dw::Renderer::ModelInstanceNode::BuildMeshDrawLists_vf13	low	RTTI ModelInstanceNode vtable 02152434 slot 13: layer test ([GM+0x2f4]&[this+8])==[GM+0x2f8], then per MeshInfo* ([this+0x84], count +0x8c) with [m+0x20] and [m+0xd1] set calls a67080 on [m+0x28]
+00a41470	SQEX::CDev::Engine::Dw::Renderer::ModelInstanceNode::DrawVisibleBatches_vf14	low	RTTI slot 14: same layer test + per-mesh frustum test a412b0, then calls MeshInfo virtual [vtbl+4]
+00a41680	SQEX::CDev::Engine::Dw::Renderer::ModelInstanceNode::DrawVisibleBatches_vf16	low	RTTI slot 16: layer test + frustum test a412b0, then MeshInfo::DrawBatchB a47100
+00a417a0	SQEX::CDev::Engine::Dw::Renderer::ModelInstanceNode::DrawVisibleBatches_vf17	low	RTTI slot 17: layer test + frustum test a412b0, then MeshInfo::DrawBatchC a47be0
+00a47be0	SQEX::CDev::Engine::Dw::Renderer::ModelInstanceNode::MeshInfo::DrawBatchC	low	third draw variant called per visible batch from slot 17 a417a0 with ecx=MeshInfo
+00a30a60	SQEX::CDev::Engine::Fw::Framework::Graphics::GraphicsManager::SetField694	low	writes GM+0x694 if changed (cmp then mov); called from FDM DrawViews a32a00 and DrawBatchA a46c20
+00a30a80	SQEX::CDev::Engine::Fw::Framework::Graphics::GraphicsManager::SetField698	low	writes GM+0x698 if changed; same callers as a30a60
+00ac5ee0	SQEX::CDev::Engine::Fw::Framework::Draw::FrameworkDrawManager::PrepareViewLists_A	low	sets [0x5107a00]+0x2f4=0x90 and +0x2f8=0x80 (layer mask/required) then calls a31bc0 BuildLayerViewLists; guarded by [0x511558c]+0x2c/+0x2d
+00ac5f50	SQEX::CDev::Engine::Fw::Framework::Draw::FrameworkDrawManager::PrepareViewLists_B	low	identical to ac5ee0 but calls a31c50 (X+0x6d10 subobject a50720) instead of a31bc0
+00ac6040	SQEX::CDev::Engine::Fw::Framework::Draw::FrameworkDrawManager::DrawMainScene	low	only caller of a32a00 DrawViews (at ac60e8); checks shadows enabled b03780 and [0x511558c]+0x2c/+0x2d, sets GM mask via a31b60
+00a3a460	SQEX::CDev::Engine::Dw::Renderer::GetAllocator	low	function-local static (guard byte 0x5107a90, cached 0x5107a8c = result of 425c40); 207 callers; renderer allocator tag CDev.Dw.Renderer.Allocator
+00ace970	SQEX::CDev::Engine::Fw::Framework::SetOrGetAllocator	low	static guard 0x51155b8 caches 425c40 result in 0x51155b4, overridden by arg [ebp+8] when non-null; 48 callers
+00a96f20	RenderInterface::D3d9::Present	med	3 KB; calls IDirect3DDevice9::Present via vtbl+0x44 (a971b8) and IAT window functions; called twice from FrameClock::WaitForFrame ac3040
+00a96090	RenderInterface::D3d9::WaitGpuQuery	low	loops a query object GetData ([[0x510e960]+0x74c] vtbl+0x1c) until result is not 0x88760868/0x8876086c; called from ac3040 around Present
+0075f000	RenderInterface::D3d9::SetColorWriteMask	med	SetRenderState via device vtbl+0xe4 with states 0xa8 (D3DRS_COLORWRITEENABLE), 0xbe, 0xbf (ENABLE1/2) and mask&0xf; caches value in 0x510e42c
+00d12da0	Framework::MainLoop	med	calls Steam::Init a04060, Framework::TickFrame ab93f0 (at d130a0), Steam::Shutdown a04250; string GetProcessUserModeExceptionPolicy
+00ab9020	SQEX::CDev::Engine::Fw::Framework::Framework::RunFrameJobs	low	called from TickFrame ab93f0 (ab9577); calls FrameJobScheduler::Run a01a00 with globals 0x5107370/0x5107354
+00a03170	SQEX::CDev::Common::Task::Debug::BeginFrame	low	first call in TickFrame ab93f0 on [0x5107370]; string CDev.Common.Task.Debug
+00a033e0	SQEX::CDev::Common::Task::Debug::EndFrame	low	second call in TickFrame on [0x5107370]; same string CDev.Common.Task.Debug
+00ab7790	Framework::Nop_ab7790	low	4-byte stub called from TickFrame
+0074beb0	white::io::FileController::ctor	med	writes FileController vtable 020aaae0 at 74bee3, builds FileSystem/DebugFileSystem/PatchFileSystem/DebugUSBFileSystem methods (vtable stores 74c119-74c1a0), calls 74af90 (Image method), starts IoThread 749990 (push at 74c2a4), string FileRead; replaces auto name FileControllerMethodDebugUSBFileSystem::ctor_dtor
+0074af90	white::io::FileControllerMethodImage::ctor	med	writes vtable 020aaaec at 74afc8, zeroes queue/semaphore fields +0x10188..+0x102bc, creates thread named ZDecode with entry DecodeThread 74ac50 (push at 74b132)
+00749690	white::io::ZlibAllocCallback	med	stored into z_stream+0x20 (zalloc) at 74ad0c in DecodeThread
+007496e0	white::io::ZlibFreeCallback	med	stored into z_stream+0x24 (zfree) at 74ad13 in DecodeThread
+00c762a0	zlib::inflateInit_	high	called in DecodeThread; version string "1.1.4"; forwards to inflateInit2_ with windowBits 15
+00c761a0	zlib::inflateInit2_	high	called by c762a0 with windowBits 0xf
+00c762c0	zlib::inflate	high	DecodeThread loop compares result to 1 (Z_STREAM_END), -2/-3 (stream/data error); z_stream next_in+0 avail_in+4 next_out+0xc avail_out+0x10 (0x10000 chunks)
+00c76150	zlib::inflateEnd	med	called once after the inflate loop in DecodeThread (74aecc)
+0074a6f0	white::io::FileControllerMethodImage::PopDecodeJob	med	locks mutex [this+0x1029c], pops job from queue at +0x10190 (749920), signals [this+0x102a4]; DecodeThread calls it with ecx=[0x24dab64]; fills 0x44-byte job struct
+0074aa80	white::io::FileControllerMethodImage::AllocDecodeBuffer	low	called with ecx=[0x24dab60] (file allocator) to get the 0x10000 output chunk stored to z_stream.next_out
+0074a3d0	white::io::FileControllerMethodImage::FreeDecodeBuffer	low	paired with 74aa80 on the same allocator object, called on completion/error paths in DecodeThread
+004022f0	white::math::Vector4::Sub	high	subps xmm1(this) - xmm0(*rhs), output ptr [ebx+8], 213 callers
+00419700	white::math::Vector4::Add	med	same body as Vector4::Sub with addps this + *rhs -> out
+00402400	white::math::Vector4::AddAssign	med	addps this += *arg, writes result back into this; ret 4
+00419790	white::math::Vector4::Cross	med	shufps 0xc9/0xd2 pair, two mulps, subps: xyz cross product of this and *rhs into out
+00402530	white::math::Vector4::Normalize3_rsqrt	low	rsqrtps + Newton step with cmpltps/andps/andnps zero-length guard; xyz only (shufps 0xd2/0xc9 sums)
+00408a50	white::math::Vector4::Normalize4_rsqrt	med	squares summed across 4 lanes (shufps 0x4e/0x39/0x93), rsqrtps + refinement, result to out [ebp+8]
+00416e40	white::math::Vector4::Dot3_Aligned	med	mulps then lane sums z(0xaa) + x + y(0x55), result splat-stored to out [ebp+8]
+00416bd0	white::math::Vector4::Dot3	med	same dot as 416e40 but loads both vectors with movss (unaligned); 75 callers
+0040aa70	white::math::Vector4::Scale	low	mulps this by shufps-broadcast scalar [ebx+8]
+0040a940	white::math::Vector4::Scale_Static	low	mulps *vec ([ebx+0x10]) by broadcast scalar [ebx+0xc], out [ebx+8]
+00408ab0	white::math::Matrix4x4::TransformVector4_Aligned	med	out = v.x*row0 + v.y*row1 + v.z*row2 + v.w*row3 with rows at this+0/0x10/0x20/0x30 (shufps 0/0x55/0xaa/0xff); 22 callers
+004089c0	white::math::Matrix4x4::AssignFromUnaligned	med	four rows loaded with movss+unpcklps from [arg], stored with movaps to this; no arithmetic
+0040abc0	white::math::Vector4::ToPackedColor8888	low	fistp with truncating FPU control word (|0xc00) of 4 floats then shl 8 packing; 142 callers
+0040b380	white::math::Vector4::ToPackedColor8888_Clamped	low	minps/maxps clamp then calls 40abc0, bswap
+00402ac0	white::math::Matrix4x4::MakeRotationY	med	CRT sin/cos thunks (cf194c/cf1952); rows (c,0,-s,0),(0,1,0,0),(s,0,c,0),(0,0,0,1) written to [ebp+8]; 213 callers (cos/sin order assumed)
+0040b110	white::math::Matrix4x4::MakeRotationZ	med	same pattern; rows (c,s,0,0),(-s,c,0,0),(0,0,1,0),(0,0,0,1)
+0040ad60	white::math::Matrix4x4::MakeRotationAxisAngle	low	takes angle (x87), axis vec4 ptr, out; CRT sin/cos; calls SetIdentity 402660; 697 bytes
+004086e0	white::math::Matrix4x4::InverseAffine	med	names4: SIMD 3x3 cofactor block of rows 0-2 with det via rcpps + Newton step, row3 (translation) handled separately, output row3 w forced to 1; no full 4x4 cofactor like 408320 Inverse; this=ecx, out=[ebp+8], ret 4; 31 callers (was range guess Matrix4x4::fn?)
+00416340	white::math::Matrix4x4::FromEuler	med	names4: loads vec4 from [ebp+0xc] (unaligned movss), masks xyz via cmpps([df4bd0]==0), calls SinCos4 416020, writes 4 rows (row3 from const 0,0,0,1 df4bdc) to out [ebp+8]; ret (cdecl); caller 416c30 uses it as the inverse of ToEuler (fix: was Quaternion::fn? range)
+004167e0	white::math::Matrix4x4::FromEuler_Aligned	med	names4: same as 416340 with aligned movaps in/out; rows stored to [eax],+0x10,+0x20,+0x30 = const (0,0,0,1) df4bd0; calls SinCos4 416020
+00416c30	white::math::Matrix4x4::ToEuler	med	names4: this=ecx matrix (unaligned movq loads), out vec3 w=0 at [ebp+8] ret 4; sqrt of m^2 sums, 3x _CIatan2 (cf1a0e), calls FromEuler 416340 to refine (fix: was Vector4::fn? range)
+00416e70	white::math::Matrix4x4::ToEuler_Aligned	med	names4: same as 416c30 but clears the w lane of each row (unpckhps with zero) and calls FromEuler_Aligned 4167e0; 3x _CIatan2 (fix: was unnamed)
+00b90790	RaycastDetector::RaycastTriangleMesh	med	names4: string 'triangle mesh raycast outputbuffer overflow!!'; sits in RaycastDetector range (b918a0 RaycastShapes calls it via b91500); 857 insns; calls ad4590 b09b50 b09d50 b8d640 b8d770 b8edb0 (was strtag str_triangle_mesh_raycast_output)
+00b8edb0	RaycastDetector::TriangleMeshRaycast_FetchTriangle	low	names4: only caller is 00b90790; ret 0x14; reads three u16 indices * stride (imul edi) and writes three aligned vec4 to out [ebp+8]/+0x10/+0x20 with sign-select (cmpps/andnps) blends; hot in perf profile (gen_Fn00b8edb0 host override in math3)
+00ad4590	white::math::Vector4::TriangleNormal	med	names4: this=ecx -> 3 vec4 verts; (v2-v0)x(v1-v0) cross product then normalize via rsqrtps + Newton step; out vec4 [ebp+8], w lane from v1; ret 4; callers b90790 b8f6f0 ad47d0
+00b09b50	RaycastDetector::TransformTriangle	med	names4: out=[ebp+8] (3 vec4), matrix=[ebp+0xc] (4 vec4 rows), tri=[ebp+0x10] (3 vec4): each vert * 3x3 rows + row3 (translation); ret; callers b90790 b8f6f0 b91e10 and Lay collision visitor b09f00/b0d910
+00b8d640	RaycastDetector::TransformRay	med	names4: stack args (out [ebp+8], matrix 4 rows [ebp+0xc], ray {origin vec4, dir vec4} [ebp+0x10]); out origin = M*origin + row3 (movups store), out dir = normalize(M3x3*dir) via rsqrtps; callers b90790 b91e10
+00771900	white::util::InvokeMemberFnPtr	med	names4: 8 insns: this' = [pmf+4] + arg; jmp [pmf] ; pointer-to-member call adjustor; called from AppGame ctor, Framework, SceneObject (9+ callers)
+008eee30	white::util::CallVf14OfDeref	low	names4: 4 insns: ecx=[ecx]; edx=[[ecx]+0x38]; jmp edx (forward to vtable slot 14 of the pointed-to object); 24 callers incl FieldNpcSeManager, SceneCDevActor
+0065dc80	white::Scene::GetObjectByHandle_B	low	names4: same shape as 0065d970 GetObjectByHandle (handle -1 -> null, idx=(s16)handle, full handle compared to obj+0x10) but 0x220 slots from table [this+0x47c]; ret 4; 16 callers in Scene.cpp (hot in prof_m3)
+00ac3010	FrameClock::InitFps	med	names4: stores float [df6860]=59.94 into this+0 and this+4 (current and target fps); see analysis/recon/frame_clock.md
+00a96110	RenderInterface::D3d9::HasVblankCapability	low	names4: cached bool in 510e964/510e965; calls fn at [[510e960]+0xc]; ovr_frame.c states it returns false in the runtime and gates the limiter branch of 00ac3040
+00799580	white::gui::GuiApi::GetWorldClockDHMS	med	names5: reads world-clock object [[24c9d00]+0x18e78], calls 005b88a0/005b88e0/005b8930/005b8960 (days, hours, minutes, seconds) into 4 out ptrs, clamps days to 12 (13-day countdown); callers GuiMainMenu, weiss::battle::LifeDuration, field Clock. Class unconfirmed (GuiApi.cpp only by range)
+005b88a0	white::WorldClock::GetDays	low	names5: wraps 009250b0 split, returns hours/24 (imul 0x2aaaaaab, sar 2); callers LifeDuration, Clock UI, 00799580
+005b88e0	white::WorldClock::GetHours	low	names5: same split as 005b88a0, returns h - (h/24)*24 = hour of day
+005b8930	white::WorldClock::GetMinutes	low	names5: wraps 009250b0, returns second out slot (minutes by call order in 00799580)
+005b8960	white::WorldClock::GetSeconds	low	names5: wraps 009250b0, returns third out slot; 4th getter of 00799580
+009250b0	white::WorldClock::SplitTime	low	names5: reads a 64-bit ms time (call 009250a0), splits /1000 then /60 steps via magic divides, writes 4 out params; callers are the 4 getters 005b88a0..005b8960
+0060fbf0	white::field::FieldCameraController::PushPositionAvgOfLast3	med	names5: ring of 3 Vector4 at this+0x8c, index at this+0xdc advanced (i+1)%3, stores arg vec4, sums samples whose squared distance from the new one is within threshold [ebp-0x60], multiplies by 1/3 const [2080790], writes result to out ptr; sole caller 00612980 (FieldCameraController.cpp)
+00aacf10	SQEX::CDev::Engine::Fw::SceneObject::Transform::ComposeAllJoints	med	names5: loops u16 count [this+0x80] over 0x100-byte joint entries at [this+0x40], for dirty ones (flag bit1 at +0xf4) copies the matrix rows (+0x80..+0xdc), clears flag, then calls 00aac130 ComposeLocalToWorld; callers Dw DrawableObject vf11 / Actor
+0099b830	white::math::Quaternion::FromEuler_Half4	low	names5: vec4 * const [df4bb0], calls 00416020 SinCos4, shufps/mulps combine into a quaternion (same shape as Quaternion::FromEuler 00416250), out via ptr; used by JointExpressionController vf1 0099d300
+00672af0	white::Scene::UpdateObjectControlLocked	low	names5: takes Scene recursive lock at this+0x7a0 (GetCurrentThreadId, lock count [+8]++, owner [+0x10]), calls 00668960 UpdateObjectControl and 0065b030; 15 ActorInterface callers (673d60..674e50)
+0066f3c0	white::Scene::UpdateObjectControlThenLocked	low	names5: calls 00668960 UpdateObjectControl(4 args) first, then takes lock this+0x7a0 and calls 0065b030; sole caller 00672af0
+009e0260	Debug::PrintCallStack	med	names5: string "****** callstack ******"; 26 insns, 4 callers
+00873030	white::gui::createStatusFrame	med	names5: string "createStatusFrame(%d) memory size: %0.3f KB" is the function name in a log; 1568 insns builds the status menu frame
+00478cd0	white::gui::createPage	med	names5: string "createPage(%d) memory size: %0.3f KB" log inside; references $f_ite/$f_sho_mtxt text keys (shop/item page)
+00488ba0	SaveData::SerializeStatsTable	low	names5: 947 insns, strings version, cleared_quests, quest_real_times, quest_game_times, quest_clear_counts, total_get_gil, total_use_gil, item_use_counts, item_get_count
+00757f00	SaveData::EnumerateSaveFiles	low	names5: strings "lrff13-%02d.dat" and "*.dat" (save file name format + find pattern)
+00532dc0	Battle::BuildBattleResourcePath	low	names5: strings "btl/%s/%s" and "btldlc/%s/%s/%s" (resource path with DLC variant); 3 callers
+004eba30	Battle::BuildBreakPartName	low	names5: strings "%sbreak%d_%d", "b_break%d_%d", "%sbreak%d_ad", "b_break%d_add"
+0074ca80	Sys::MatchGameExeName	low	names5: strings "weiss.exe" and "ffxiii.exe", 18 callers
+0093d340	Actor::PrintActStateDebug	low	names5: debug strings "act<%s/%s>" and "State:0x%x Prev:0x%x"
+009a2d50	Script::AddDynamicScriptDb	low	names5: string "add dynamic script db <%s> classname = %s" and "sdb%02x%02x..." id format
+009d1f60	Script::PrintHaltDebug	low	names5: string "halt <%s>", 33 insns, 0 direct callers
+00cc5150	Vfx::LinkArray::PrintInfo	low	names5: string "LinkArrayInfo: Free(%d) Use(%d) Total(%d)"
+00c21c00	SQEX::CDev::Engine::Vfx::Io::Printer::FormatLine	low	names5: strings "%s[vfx] %s", "%s[vfx.assert] %s", "%s[vfx.w%d] %s" (level-tagged log format); Printf is 00c225e0
+00c172e0	Miles::ASI_stream_open	med	names5: strings "ASI_stream_open() failed -- out of memory/truncated file/could not ..." name the function; 155 insns
+00c16cc0	Miles::ASI_decode_loop	low	names5: strings "Entering decode loop, want %d bytes", "Obtained modify lock for input", "Ready to accept more data", "Fetched %d bytes (asked for %d)", "Starved"
+00c97d50	Vfx::OpiOutput::ValidateParallelIndex	low	names5: strings "rOpiOutput._ucUseParallelIndex is over!", "id is over!"
+00c98220	Vfx::OpiOutput::ValidateCountAndParallelIndex	low	names5: strings "count is over!", "rOpiOutput.cUseParallelIndex is over!"
+00931120	BattleParam::BindScoreKeys	low	names5: key strings iScBase, iScRankRate, iScResRate, fScGPCoef, fScItemCoef, iScModeCoefE/N/H, iScDiffBd1.. (battle score parameter table binder)
+009311f0	BattleParam::BindScoreRankBorders	low	names5: key strings iScRankBd1..iScRankBd11+
+009315c0	BattleParam::BindBreakStageRates	low	names5: key strings fBrkStg2MaxRate, fBrkStg1MaxRate
+00931780	BattleParam::BindBreakPanelFlash	low	names5: key strings fBrkPanelFls0..2
+009328a0	BattleParam::BindAbilityRareChain	low	names5: key strings iAbiRareChainHq, iAbiRareChainNq
+00933440	BattleParam::BindBalanceKeys	low	names5: 1867 insns; key strings fAirDeadBlsH/T, iPcStatusMin, fHdGlDrRate, fAtbSubSpdRate, iAtbSpndModMin, fDZGilRate, fDZItmDrpR (battle balance parameter table binder)
+008a9980	white::gfx::ScanLineEffect::BindShaderParams	low	names5: shader param name strings scLineWidth, scLineHeight, scLineAlpha, baseAlpha, gradationLine, animationUV, srcSCLineSampler
+008ac470	white::gfx::PostEffect::BindShaderParams	low	names5: shader param name strings texelIncrement, blendFactor[0..4], scLineWidth, scLineHeight, coefficient
+00c5c050	SQEX::CDev::Engine::Dw::Shader::BindLightParams	low	names5: shader param strings ambientColor, ambientLightColor, lightCount, lightColors, lightDirections, lightParams, lightPositions, light0bit0/1; Dw namespace by neighbor a93b70 CDev.Dw.Shader.Constant
+00c5e890	SQEX::CDev::Engine::Dw::Shader::BindModelParams	low	names5: shader param strings isSkining, ModelBBoxScale, ModelBBoxOffSet, latitudeParam, maskingMapMatrix, maskingMapInvVPMatrix, viewProjMatrix
+00c5fcf0	SQEX::CDev::Engine::Dw::Shader::BuildTexParamNames	low	names5: strings "%sTexMatrix", "%sTexColor"
+0061f150	Field::ParseAreaLayerName	low	names5: strings BattleArea, MonsterPop, RareMonster, MapBlock, MainArea, LevelArea, deathspace, EffectArea
+005b41c0	Field::BuildFieldLogKey	low	names5: strings treasurebox, enc.kind, enc.result, enc.info, wholeMap, playerMoveTrack, playtime, talk, worldMap, "%sfield.%s%s"
+005d3980	Field::PrintTerritoryDebug	low	names5: strings "isEnterTerritory [%d] territoryId [%d] ..." and "copy matrix [index %d] updated <%.3f,..."
+00487e50	Chara::BuildEquipPartNames	low	names5: strings e_costume, e_weapon, e_shield, e_decoration
+009ec440	Sound::BuildSoundFileNames	low	names5: strings "r_soundfdic%s", "r_soundfname%s"
+007f7500	white::gui::LibraWindow::SetupText	low	names5: 1140 insns; strings $libra_18..$libra_37, "$libra_%02d" (Libra scan window text keys)
