@@ -22,6 +22,7 @@
 #include <windows.h>
 #endif
 #include "xrc_rt.h"
+#include "guest_types.h"
 
 
 #ifdef _WIN32
@@ -155,7 +156,7 @@ void XRC_CC xo_00a96590(XCtx *c) {
 	if (wlog < 0) wlog = getenv("XRC_OVR_FRAME_LOG") != 0;
 	if (!wlog) { xo_00a96590_body(c); return; }
 	{ /* the callers (return addresses) of the wait */
-		u32 ra = M32(c->esp);
+		u32 ra = ret_addr(c);
 		int i;
 		for (i = 0; i < 8 && w_ra[i] && w_ra[i] != ra; i++);
 		if (i < 8) { w_ra[i] = ra; w_ra_n[i]++; }
@@ -170,10 +171,10 @@ static void XRC_CC xo_00a96590_body(XCtx *c) {
 	u32 dev, rs = c->esp - 0x100, args[3];
 	if (!orig) orig = xrc_translation_of(0x00a96590u);
 	if (ovr_on < 0) ovr_init();
-	if (!ovr_on || M32(0x510e940u) || !(dev = M32(0x510e944u))) { orig(c); return; }
+	if (!ovr_on || M32(G_WAIT_FLAG) || !(dev = M32(G_WAIT_OBJ))) { orig(c); return; }
 	start = xrc_qpc();
-	if (!(M8(0x24c3ae0u) & 1)) { M32(0x24c3ae0u) |= 1; M32(0x24c3ad8u) = 10000000u; M32(0x24c3adcu) = 0; } /* QueryPerformanceFrequency */
-	timeout = M64(0x24c3ad8u) / 50ull;
+	if (!(GF(QpfCache, G_QPF_CACHE, init_flags_b0) & QPF_VALID)) { GF(QpfCache, G_QPF_CACHE, init_flags) |= QPF_VALID; GF(QpfCache, G_QPF_CACHE, freq_lo) = 10000000u; GF(QpfCache, G_QPF_CACHE, freq_hi) = 0; } /* QueryPerformanceFrequency */
+	timeout = GF(QpfCache, G_QPF_CACHE, freq) / 50ull;
 	if (xrc_raster_mode()) { /* the modeled vblank, else the 20 ms cap */
 		unsigned long long vb = rs_next_vblank(start);
 		if (vb - start < timeout) { /* the vblank exit: eax = the last poll's 0 */
@@ -189,10 +190,10 @@ static void XRC_CC xo_00a96590_body(XCtx *c) {
 		return;
 	}
 	args[0] = dev; args[1] = 0; args[2] = rs;
-	M32(rs) = 0; M32(rs + 4) = 0;
+	GF(U32Pair, rs, w0) = 0; GF(U32Pair, rs, w1) = 0;
 	{ /* the first poll: the stub's constant answer, else the original loop */
-		u32 r = xrc_call_guest(c, M32(M32(dev) + 0x4c), 3, args);
-		if (r || M32(rs) || M32(rs + 4)) { orig(c); return; }
+		u32 r = xrc_call_guest(c, guest_vfn(dev, 0x4c), 3, args);
+		if (r || GF(U32Pair, rs, w0) || GF(U32Pair, rs, w1)) { orig(c); return; }
 	}
 	wait_until(start + timeout);
 	c->eax = (u32)timeout;
@@ -287,8 +288,8 @@ static void pt_row(unsigned long long pre, unsigned long long post, unsigned lon
 	pt_prev_post = post; pt_pr0 = pr; pt_fw0 = fw; pt_g0 = g > 0 ? g : 0;
 }
 static void fps60_tick(u32 out) {
-	u32 fc = M32(0x511555cu);
-	float tgt = fc ? *(float *)(XM + fc + 4) : 0.0f;
+	u32 fc = M32(G_FRAME_CLOCK);
+	float tgt = fc ? GFN(FrameClock, fc, target_fps) : 0.0f;
 	unsigned long long now = xrc_qpc();
 	long long raw = (int)M32(out);
 	if (f60_on < 0) { const char *e = getenv("XRC_FPS60"); f60_on = !(e && e[0] == '0'); f60_log = getenv("XRC_FPS60_LOG") != 0;
@@ -299,7 +300,7 @@ static void fps60_tick(u32 out) {
 		f60_hist[t < 0 ? 0 : t > 3 ? 3 : t]++; f60_sum += d; if (d > f60_max) f60_max = d;
 		if (++f60_n >= 300) {
 			fprintf(stderr, "xrc: fps60: raw dt ticks 0:%d 1:%d 2:%d 3+:%d; frame period avg %.2f max %.2f ms; FC[0]=%g FC[4]=%g; at %.1f s\n",
-			        f60_hist[0], f60_hist[1], f60_hist[2], f60_hist[3], f60_sum / f60_n, f60_max, fc ? *(float *)(XM + fc) : -1.0f, tgt,
+			        f60_hist[0], f60_hist[1], f60_hist[2], f60_hist[3], f60_sum / f60_n, f60_max, fc ? GFN(FrameClock, fc, fps) : -1.0f, tgt,
 			        (double)(now - 600000000ull) / 1e7);
 			f60_n = 0; f60_hist[0] = f60_hist[1] = f60_hist[2] = f60_hist[3] = 0; f60_sum = f60_max = 0.0;
 		}
@@ -326,16 +327,16 @@ static void fps60_tick(u32 out) {
 
 void XRC_CC xo_00ac33b0(XCtx *c) {
 	static XFn orig;
-	u32 ret = M32(c->esp), out = M32(c->esp + 4);
+	u32 ret = ret_addr(c), out = arg_u32(c, 1);
 	if (!orig) orig = xrc_translation_of(0x00ac33b0u);
 	orig(c);
 	if (ret >= 0x00ab93f0u && ret < 0x00ab9a00u) fps60_tick(out);
 	if (clamp_on < 0) clamp_on = getenv("XRC_CLAMP_LOG") != 0;
 	if (clamp_on && ret >= 0x00ab93f0u && ret < 0x00ab9a00u) { /* from Framework::TickFrame */
 		long long maxdt = 20020, dt = (int)M32(out);
-		u32 cfg = M32(0x5115590u);
+		u32 cfg = M32(G_FRAME_CFG);
 		if (cfg) {
-			float mf = *(float *)(XM + cfg + 8);
+			float mf = GFN(FrameCfg, cfg, max_fps);
 			if (mf > 0.0f) maxdt = (long long)((double)(1.0f / mf) * 300000.0 + 0.5); /* (rounded: 20020, the game's clamp, = 4 ticks) */
 		}
 		cl_frames++; cl_total++;

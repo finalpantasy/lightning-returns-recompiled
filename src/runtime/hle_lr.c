@@ -6,20 +6,21 @@
 #include <string.h>
 #include <time.h>
 #include "xrc_rt.h"
+#include "guest_types.h"
 
 #define A(i) xrc_arg(c, (i))
 #define RET(v, n) do { c->eax = (u32)(v); xrc_stdcall_ret(c, (n)); return; } while (0)
 #define S(a) ((char *)(xrc_mem + (u32)(a)))
-static void set_err(u32 e) { M32(xrc_teb + 0x34) = e; }
+static void set_err(u32 e) { GF(Teb, xrc_teb, last_error) = e; }
 
 /* ============================================================================================ KERNEL32 */
-static void hle_GetStartupInfoW(XCtx *c) { memset(xrc_mem + A(0), 0, 68); M32(A(0)) = 68; RET(0, 1); }
+static void hle_GetStartupInfoW(XCtx *c) { memset(xrc_mem + A(0), 0, 68); GF(StartupInfoW, A(0), cb) = sizeof(StartupInfoW); RET(0, 1); }
 static void hle_EncodePointer(XCtx *c) { RET(A(0), 1); }
 static void hle_DecodePointer(XCtx *c) { RET(A(0), 1); }
 static void hle_HeapSetInformation(XCtx *c) { RET(1, 4); }
 /* the instruction sets the translated code handles: SSE, SSE2, RDTSC (no MMX, no SSE3) */
 static void hle_IsProcessorFeaturePresent(XCtx *c) {
-	u32 f = A(0), ra = M32(c->esp);
+	u32 f = A(0), ra = ret_addr(c);
 	/* Miles' mixer picker (00c1f1b0) asks for SSE2 at 00c1f2de and 00c1f367; a yes picks 00c1e430 / 00c1e980, which use
 	 * pslldq (not translated). No there: it picks its other mixers (translated), as on a CPU without SSE2. */
 	if (f == 10 && (ra == 0x00c1f2e4u || ra == 0x00c1f36fu)) RET(0, 1);
@@ -37,18 +38,18 @@ void XRC_CC xrc_mss_cpu_probe(XCtx *c) {
 }
 /* GetVersionExA: Windows 7 SP1 (what the 2014 release was built against) */
 static void hle_GetVersionExA(XCtx *c) {
-	u32 p = A(0), size = M32(p);
+	u32 p = A(0), size = GF(OsVersionInfoEx, p, size);
 	if (size != 148 && size != 156) { set_err(122); RET(0, 1); }
 	memset(xrc_mem + p + 4, 0, size - 4);
-	M32(p + 4) = 6; M32(p + 8) = 1; M32(p + 12) = 7601; M32(p + 16) = 2;
-	strcpy(S(p + 20), "Service Pack 1");
-	if (size == 156) M16(p + 148) = 1; /* wServicePackMajor */
+	GF(OsVersionInfoEx, p, major) = 6; GF(OsVersionInfoEx, p, minor) = 1; GF(OsVersionInfoEx, p, build) = 7601; GF(OsVersionInfoEx, p, platform_id) = 2;
+	strcpy(S(GADDR(OsVersionInfoEx, p, csd_version)), "Service Pack 1");
+	if (size == 156) GF(OsVersionInfoEx, p, service_pack_major) = 1;
 	RET(1, 1);
 }
 static void put_systime(u32 p, const struct tm *t, unsigned ms) {
-	M16(p) = (u16)(t->tm_year + 1900); M16(p + 2) = (u16)(t->tm_mon + 1); M16(p + 4) = (u16)t->tm_wday;
-	M16(p + 6) = (u16)t->tm_mday; M16(p + 8) = (u16)t->tm_hour; M16(p + 10) = (u16)t->tm_min;
-	M16(p + 12) = (u16)t->tm_sec; M16(p + 14) = (u16)ms;
+	GF(SystemTime, p, year) = (u16)(t->tm_year + 1900); GF(SystemTime, p, month) = (u16)(t->tm_mon + 1); GF(SystemTime, p, day_of_week) = (u16)t->tm_wday;
+	GF(SystemTime, p, day) = (u16)t->tm_mday; GF(SystemTime, p, hour) = (u16)t->tm_hour; GF(SystemTime, p, minute) = (u16)t->tm_min;
+	GF(SystemTime, p, second) = (u16)t->tm_sec; GF(SystemTime, p, milliseconds) = (u16)ms;
 }
 static void hle_GetSystemTime(XCtx *c) {
 	struct timespec ts;
@@ -75,12 +76,12 @@ static long long days_1601(int y, int m, int d) {
 }
 static void hle_SystemTimeToFileTime(XCtx *c) {
 	u32 st = A(0), ft = A(1);
-	int y = M16(st), mo = M16(st + 2), d = M16(st + 6);
-	if (y < 1601 || mo < 1 || mo > 12 || d < 1 || d > 31 || M16(st + 8) > 23 || M16(st + 10) > 59 || M16(st + 12) > 59 || M16(st + 14) > 999) { set_err(87); RET(0, 2); }
+	int y = GF(SystemTime, st, year), mo = GF(SystemTime, st, month), d = GF(SystemTime, st, day);
+	if (y < 1601 || mo < 1 || mo > 12 || d < 1 || d > 31 || GF(SystemTime, st, hour) > 23 || GF(SystemTime, st, minute) > 59 || GF(SystemTime, st, second) > 59 || GF(SystemTime, st, milliseconds) > 999) { set_err(87); RET(0, 2); }
 	{
-		long long t = ((days_1601(y, mo, d) * 24 + M16(st + 8)) * 60 + M16(st + 10)) * 60 + M16(st + 12);
-		u64 v = (u64)t * 10000000ull + (u64)M16(st + 14) * 10000ull;
-		M64(ft) = v;
+		long long t = ((days_1601(y, mo, d) * 24 + GF(SystemTime, st, hour)) * 60 + GF(SystemTime, st, minute)) * 60 + GF(SystemTime, st, second);
+		u64 v = (u64)t * 10000000ull + (u64)GF(SystemTime, st, milliseconds) * 10000ull;
+		GF(FileTime, ft, value) = v;
 	}
 	RET(1, 2);
 }
@@ -121,7 +122,7 @@ static void hle_CopyFileA(XCtx *c) {
 }
 
 /* ============================================================================================ others */
-static void hle_InitializeSecurityDescriptor(XCtx *c) { memset(xrc_mem + A(0), 0, 20); M8(A(0)) = 1; RET(1, 2); }
+static void hle_InitializeSecurityDescriptor(XCtx *c) { memset(xrc_mem + A(0), 0, 20); GF(SecurityDescriptor, A(0), revision) = 1; RET(1, 2); }
 static void hle_SetSecurityDescriptorDacl(XCtx *c) { RET(1, 4); }
 /* MakeSureDirectoryPathExists(path): every directory up to the last separator */
 static void hle_MakeSureDirectoryPathExists(XCtx *c) {
@@ -148,9 +149,9 @@ static void hle_SysAllocString(XCtx *c) {
 	while (M16(s + 2 * n)) n++;
 	p = xrc_heap_alloc(4 + 2 * n + 2, 0);
 	if (!p) RET(0, 1);
-	M32(p) = 2 * n;
+	GF(Bstr, p, byte_len) = 2 * n;
 	memcpy(xrc_mem + p + 4, xrc_mem + s, 2 * n);
-	M16(p + 4 + 2 * n) = 0;
+	GFI(Bstr, p, chars, n) = 0;
 	RET(p + 4, 1);
 }
 /* ShellExecuteA(hwnd, op, file, params, dir, show): opens nothing (web pages, the manual); "success" */
@@ -213,9 +214,9 @@ static int xi_scripted(XCtx *c) {
 	int b = xrc_pad_scripted();
 	if (b < 0) return 0;
 	if (A(0) != 0 || A(1) == 0 || !pad_plugged()) { c->eax = 1167; return 1; }
-	memset(xrc_mem + A(1), 0, 16);
-	M32(A(1)) = ++packet;
-	M16(A(1) + 4) = (u16)b;
+	memset(xrc_mem + A(1), 0, sizeof(XInputState));
+	GF(XInputState, A(1), packet_number) = ++packet;
+	GF(XInputState, A(1), buttons) = (u16)b;
 	c->eax = 0;
 	return 1;
 }
@@ -285,7 +286,7 @@ void xrc_pad_hotplug_poll(void) {
 	if (m == last) return;
 	fprintf(stderr, "xrc: xinput: pads %x -> %x, the game rescans\n", last, m);
 	last = m;
-	if ((mgr = M32(0x24dab1cu)) != 0) __atomic_fetch_add((u32 *)(xrc_mem + mgr + 8), 3u, __ATOMIC_SEQ_CST);
+	if ((mgr = M32(G_PAD_MGR)) != 0) __atomic_fetch_add(&GFN(PadManager, mgr, device_change_count), 3u, __ATOMIC_SEQ_CST);
 }
 #else
 void xrc_pad_hotplug_poll(void) {}

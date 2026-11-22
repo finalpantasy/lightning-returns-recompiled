@@ -29,19 +29,10 @@
 #endif
 #include "xrc.h"
 #include "xrc_rt.h"
+#include "guest_types.h"
 #include <pthread.h>
 
-#define G_HID 0x24d94ecu      /* white::io::Hid *: + 4 pad 0, + 8 pad 1 (the debug pad) */
-#define G_SCENE 0x24d0db0u    /* white::scene::Scene *: + 0x30 flags, + 0x3c default (debug) camera, + 0x40 game camera */
-#define G_APP 0x2350974u      /* white::AppGame *: + 0x680 flags (0x1000: the debug camera toggle allowed) */
-#define SC_DEBUGCAM 4u
-#define SC_RESYNC 0x40000u
-#define APP_DEBUGCAM 0x1000u
-#define G_GUIMGR 0x50f19f4u   /* white::gui::GuiManager * (field HUD: +0x15b8 bit 4 = shown) */
-#define G_TIME 0x234f130u     /* the frame timer: + 0x44 the frame delta the camera's update reads */
 #define FN_SHOWHIDE_FIELDMENU 0x00799b60u /* cdecl GuiApi::showHideFieldMenu(visible, 0) */
-#define SC_PAUSE 0x20000u     /* Scene time scale 0 (006681e0 stores 0 in [0x23311dc]) */
-#define SC_MOVEPAUSE 0x20u    /* "[MoveObjectPause] <pause>" (006681e0: bits 0x60 pause the scene's move objects) */
 
 static int fc_mode = -1;     /* XRC_FREECAM: 0 off, 1 on */
 static int fc_on;            /* the debug camera shown (our view of scene bit 4) */
@@ -164,9 +155,9 @@ static int xi_mod(void) { /* the first pad's triggers: RT boost, LT slow */
 /* the world pause: scene flags (Scene 006681e0 reads them every frame: 0x20000 = time scale 0, 0x20 = the move objects
  * pause); the debug camera's update goes on (Scene 00666a70 runs either way) */
 static void fc_pause_apply(u32 scene, int on) {
-	if (on) M32(scene + 0x30) |= fc_pause_mask; else M32(scene + 0x30) &= ~fc_pause_mask;
+	if (on) GF(Scene, scene, flags) |= fc_pause_mask; else GF(Scene, scene, flags) &= ~fc_pause_mask;
 	fc_paused = on;
-	fprintf(stderr, "xrc: freecam: world %s (scene flags %08x, mask %08x)\n", on ? "paused" : "running", M32(scene + 0x30), fc_pause_mask);
+	fprintf(stderr, "xrc: freecam: world %s (scene flags %08x, mask %08x)\n", on ? "paused" : "running", GF(Scene, scene, flags), fc_pause_mask);
 }
 static void fc_toggle_pause(u32 set) { /* set: 0xffffffff toggle, else a mask (0 = run) */
 	u32 scene = M32(G_SCENE);
@@ -179,16 +170,16 @@ static void fc_toggle_pause(u32 set) { /* set: 0xffffffff toggle, else a mask (0
 static void fc_toggle(void) {
 	u32 scene = M32(G_SCENE), app = M32(G_APP);
 	if (!scene || !app) return;
-	M32(app + 0x680) |= APP_DEBUGCAM;
-	M32(scene + 0x30) ^= SC_DEBUGCAM;
-	M32(scene + 0x30) |= SC_RESYNC; /* (the game copies its camera into the debug one: 00666a70) */
-	fc_on = (M32(scene + 0x30) & SC_DEBUGCAM) != 0;
+	GF(AppGame, app, flags) |= APP_DEBUGCAM;
+	GF(Scene, scene, flags) ^= SC_DEBUGCAM;
+	GF(Scene, scene, flags) |= SC_RESYNC; /* (the game copies its camera into the debug one: 00666a70) */
+	fc_on = (GF(Scene, scene, flags) & SC_DEBUGCAM) != 0;
 	if (fc_on && !fc_keep_hud) fc_hud_req = 0;
 	if (!fc_on) { fc_hud_req = fc_hud_hidden ? 1 : -1; if (fc_paused) fc_pause_apply(scene, 0); }
 	if (fc_on && fc_pause_auto && !fc_paused) fc_pause_apply(scene, 1);
-	fprintf(stderr, "xrc: freecam: debug words c4 %08x c8 %08x cc %08x\n", M32(0x50e75c4u), M32(0x50e75c8u), M32(0x50e75ccu));
+	fprintf(stderr, "xrc: freecam: debug words c4 %08x c8 %08x cc %08x\n", GFI(DebugWords, G_DEBUG_WORDS, w, 0), GFI(DebugWords, G_DEBUG_WORDS, w, 1), GFI(DebugWords, G_DEBUG_WORDS, w, 2));
 	fprintf(stderr, "xrc: freecam %s at %.1f s (scene %08x flags %08x, app flags %08x)\n", fc_on ? "on" : "off",
-	        (double)(xrc_now_us() - fc_t0) * 1e-6, scene, M32(scene + 0x30), M32(app + 0x680));
+	        (double)(xrc_now_us() - fc_t0) * 1e-6, scene, GF(Scene, scene, flags), GF(AppGame, app, flags));
 }
 static void fc_photo(void) {
 	char path[700];
@@ -270,7 +261,7 @@ void XRC_CC xo_0070b3a0(XCtx *c) {
 		if (!pthread_create(&t, 0, fc_poll, 0)) pthread_detach(t);
 	}
 	scene = M32(G_SCENE);
-	if (scene) fc_on = (M32(scene + 0x30) & SC_DEBUGCAM) != 0; /* (a second pad's own toggle, a scene change) */
+	if (scene) fc_on = (GF(Scene, scene, flags) & SC_DEBUGCAM) != 0; /* (a second pad's own toggle, a scene change) */
 	tm = M32(G_TIME);
 	hid = M32(G_HID);
 	m = fc_mod_script == 2 ? 0 : fc_mod_script ? fc_mod_script : fc_xi_mod;
@@ -281,35 +272,33 @@ void XRC_CC xo_0070b3a0(XCtx *c) {
 		last = now;
 		if (wall < 0.001) wall = 0.001;
 		if (wall > 0.1) wall = 0.1;
-		if (tm) { dt = MF32(tm + 0x44); MF32(tm + 0x44) = (float)(fc_speed * mult * wall / 0.1001); }
+		if (tm) { dt = GF(FrameTimer, tm, delta); GF(FrameTimer, tm, delta) = (float)(fc_speed * mult * wall / 0.1001); }
 		/* the turn: the right stick (+0x2c, +0x30 of the second pad) kept on a share of the calls */
-		if (hid && (p1 = M32(hid + 8))) {
+		if (hid && (p1 = GF(Hid, hid, pad1))) {
 			double f = (double)fc_rot * mult / 1.912 * wall;
 			fc_rot_acc += f;
 			if (fc_rot_acc > 2.0) fc_rot_acc = 2.0;
 			if (fc_rot_acc >= 1.0) fc_rot_acc -= 1.0;
-			else { MF32(p1 + 0x2c) = 0; MF32(p1 + 0x30) = 0; }
+			else { GF(Pad, p1, right_stick_x) = 0; GF(Pad, p1, right_stick_y) = 0; }
 		}
 	} else last = 0;
 	if (fc_log && fc_on) {
 		static unsigned n;
 		if (n++ % 30 == 0) {
-			u32 o = M32(c->esp + 4);
-			fprintf(stderr, "xrc: freecam: dt %g->%g mult %g pos %.2f %.2f %.2f yaw %.1f paused %d scene flags %08x t %.2f\n", dt, tm ? MF32(tm + 0x44) : 0.f, mult,
-			        MF32(o + 0x180), MF32(o + 0x184), MF32(o + 0x188), atan2(MF32(o + 0x170), MF32(o + 0x178)) * 57.29578, fc_paused, scene ? M32(scene + 0x30) : 0,
+			u32 o = arg_u32(c, 1);
+			fprintf(stderr, "xrc: freecam: dt %g->%g mult %g pos %.2f %.2f %.2f yaw %.1f paused %d scene flags %08x t %.2f\n", dt, tm ? GF(FrameTimer, tm, delta) : 0.f, mult,
+			        GF(DebugCamera, o, pos_x), GF(DebugCamera, o, pos_y), GF(DebugCamera, o, pos_z), atan2(GF(DebugCamera, o, unk_170), GF(DebugCamera, o, unk_178)) * 57.29578, fc_paused, scene ? GF(Scene, scene, flags) : 0,
 			        (double)(xrc_now_us() - fc_t0) * 1e-6);
 		}
 	}
 	orig(c);
-	if (tm && fc_on) MF32(tm + 0x44) = dt;
+	if (tm && fc_on) GF(FrameTimer, tm, delta) = dt;
 }
 
 /* 00742420 white::io::Hid::vf7, the pads' update once a frame (before the actors and the scene). While the camera is
  * free, the first pad's state (buttons +4..+0x18, sticks / triggers +0x1c..+0x40; the keyboard emulation lands there
  * too) moves to the second pad, which the debug camera reads, and the first pad reads as idle: Lightning stands
  * still and the game's menus do not open. Also the game thread's hook for the HUD call. */
-#define PAD_STATE_LO 4u
-#define PAD_STATE_HI 0x44u
 void XRC_CC xo_00742420(XCtx *c) {
 	static XFn orig;
 	u32 hid = c->ecx, p0, p1;
@@ -326,27 +315,27 @@ void XRC_CC xo_00742420(XCtx *c) {
 			u32 a[2];
 			if ((!want) == (fc_hud_hidden != 0)) fc_hud_req = -1; /* (already so) */
 			else {
-				if (!want) fc_hud_was = (M32(gm + 0x15b8) >> 4) & 1;
+				if (!want) fc_hud_was = (GF(GuiManager, gm, flags) >> 4) & 1;
 				a[0] = (u32)want; a[1] = 0;
 				if (want && !fc_hud_was) a[0] = 0; /* (it was hidden before the camera: leave it so) */
 				xrc_call_guest(c, FN_SHOWHIDE_FIELDMENU, 2, a);
 				*c = sv;
 				fc_hud_hidden = !want;
 				fc_hud_req = -1;
-				fprintf(stderr, "xrc: freecam: HUD %s (GuiManager %08x flags %08x)\n", want ? "shown" : "hidden", gm, M32(gm + 0x15b8));
+				fprintf(stderr, "xrc: freecam: HUD %s (GuiManager %08x flags %08x)\n", want ? "shown" : "hidden", gm, GF(GuiManager, gm, flags));
 			}
 		}
 	}
 	{ static int gui_off; /* bit 18 of word c8: the game's GUI-draw skip (hides the battle HUD too) */
-		if (fc_mode > 0 && fc_on && !fc_keep_hud) { M32(0x50e75c8u) |= 0x40000u; gui_off = 1; }
-		else if (gui_off) { M32(0x50e75c8u) &= ~0x40000u; gui_off = 0; } }
-	if (fc_mode > 0 && fc_on) { int k; for (k = 0; k < 3; k++) { M32(0x50e75c4u + 4 * k) &= ~fc_dbg_clear[k]; M32(0x50e75c4u + 4 * k) |= fc_dbg_set[k]; } }
+		if (fc_mode > 0 && fc_on && !fc_keep_hud) { GFI(DebugWords, G_DEBUG_WORDS, w, 1) |= DBGW1_GUI_DRAW_SKIP; gui_off = 1; }
+		else if (gui_off) { GFI(DebugWords, G_DEBUG_WORDS, w, 1) &= ~DBGW1_GUI_DRAW_SKIP; gui_off = 0; } }
+	if (fc_mode > 0 && fc_on) { int k; for (k = 0; k < 3; k++) { GFI(DebugWords, G_DEBUG_WORDS, w, k) &= ~fc_dbg_clear[k]; GFI(DebugWords, G_DEBUG_WORDS, w, k) |= fc_dbg_set[k]; } }
 	if (fc_mode <= 0 || !fc_on || fc_pad2 || !hid) return;
-	p0 = M32(hid + 4); p1 = M32(hid + 8);
+	p0 = GF(Hid, hid, pad0); p1 = GF(Hid, hid, pad1);
 	if (!p0 || !p1) return;
 	memcpy(XM + p1 + PAD_STATE_LO, XM + p0 + PAD_STATE_LO, PAD_STATE_HI - PAD_STATE_LO);
 	memset(XM + p0 + PAD_STATE_LO, 0, PAD_STATE_HI - PAD_STATE_LO);
-	if (fc_force_turn) MF32(p1 + 0x2c) = 1.0f;
+	if (fc_force_turn) GF(Pad, p1, right_stick_x) = 1.0f;
 }
 
 const XrcManual xrc_manual_dbg[] = {

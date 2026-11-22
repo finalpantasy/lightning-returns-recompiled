@@ -11,14 +11,15 @@
  * host's pads nor a scripted XRC_INPUT pad worked. */
 #include <stdio.h>
 #include "xrc_rt.h"
+#include "guest_types.h"
 
 #define XRC_PAD_GUID1 0x50435258u /* (hle_dinput.c) */
 #define XRC_PAD_GUID2 0x00004441u
 
 void XRC_CC xo_00744820(XCtx *c) {
 	static XFn orig;
-	u32 g = M32(c->esp + 4);
-	if (g && M32(g) == XRC_PAD_GUID1 && M32(g + 4) == XRC_PAD_GUID2) {
+	u32 g = arg_u32(c, 1);
+	if (g && GF(Guid, g, data1) == XRC_PAD_GUID1 && GF(Guid, g, data2_3) == XRC_PAD_GUID2) {
 		c->eax = (c->eax & ~0xffu) | 1;
 		xrc_cdecl_ret(c);
 		return;

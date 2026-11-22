@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "xrc_rt.h"
+#include "guest_types.h"
 
 #if !defined(XRC_VEC)
 #error "ovr_math.c needs the SSE host path (XRC_VEC)"
@@ -57,8 +58,8 @@ static inline void st32(void *p, u32 v) { memcpy(p, &v, 4); }
 static inline void st64(void *p, u64 v) { memcpy(p, &v, 8); }
 
 /* xrc_stdcall_ret / xrc_cdecl_ret inline (they are two stores; the call was a measurable part of a leaf's cost) */
-#define XRC_STDCALL_RET(c_, n_) do { (c_)->eip = M32((c_)->esp); (c_)->esp += 4u + 4u * (u32)(n_); } while (0)
-#define XRC_CDECL_RET(c_) do { (c_)->eip = M32((c_)->esp); (c_)->esp += 4u; } while (0)
+#define XRC_STDCALL_RET(c_, n_) do { (c_)->eip = ret_addr(c_); (c_)->esp += 4u + 4u * (u32)(n_); } while (0)
+#define XRC_CDECL_RET(c_) do { (c_)->eip = ret_addr(c_); (c_)->esp += 4u; } while (0)
 
 #include "ovr_math_gen.inc"
 
@@ -90,14 +91,14 @@ void XRC_CC xrc_orig_0040abc0(XCtx *c);
 static void XRC_CC gen_Multiply(XCtx *c) {
 	u8 *const xm = XM;
 	X128 X[8];
-	u32 s = c->esp - 0x100u, out = M32(c->esp + 4), rhs = M32(c->esp + 8), tmp = s + 0x20u;
+	u32 s = c->esp - 0x100u, out = arg_u32(c, 1), rhs = arg_u32(c, 2), tmp = s + 0x20u;
 	u64 hi;
 	int r;
 	X[0] = c->x[0]; X[1] = c->x[1]; X[2] = c->x[2]; X[3] = c->x[3]; X[4] = c->x[4]; X[5] = c->x[5]; X[6] = c->x[6]; X[7] = c->x[7];
 	_Pragma("clang loop unroll(full)")
 	for (r = 3; r >= 0; r--) {
-		M32(s + 4) = tmp + 16u * (u32)r;     /* the callee's [esp + 4]: out */
-		M32(s + 8) = rhs + 16u * (u32)r;     /* [esp + 8]: v */
+		FRAME_ARG(s, 1) = tmp + 16u * (u32)r;     /* the callee's [esp + 4]: out */
+		FRAME_ARG(s, 2) = rhs + 16u * (u32)r;     /* [esp + 8]: v */
 		(void)core_TransformVector4(c, X, c->ecx, s);
 	}
 	_Pragma("clang loop unroll(full)")
@@ -116,8 +117,8 @@ static void XRC_CC gen_Multiply(XCtx *c) {
 /* 00cf1a20 _aulldiv: stdcall-like (ret 0x10) (dividend lo, hi, divisor lo, hi) -> edx:eax = the quotient. A zero divisor
  * is left to the translation (the CPU's divide fault) */
 static void XRC_CC gen_aulldiv(XCtx *c) {
-	u32 a = c->esp + 4;
-	u64 n = (u64)M32(a) | (u64)M32(a + 4) << 32, d = (u64)M32(a + 8) | (u64)M32(a + 12) << 32, q;
+	u32 sp = c->esp;
+	u64 n = (u64)FRAME_ARG(sp, 1) | (u64)FRAME_ARG(sp, 2) << 32, d = (u64)FRAME_ARG(sp, 3) | (u64)FRAME_ARG(sp, 4) << 32, q;
 	if (!d) { xrc_orig_00cf1a20(c); return; }
 	q = n / d;
 	c->eax = (u32)q;
@@ -132,22 +133,25 @@ static void XRC_CC gen_aulldiv(XCtx *c) {
  * initializes lazily under the guard bits 1, 2, 4 of the dword at 0x51157b0 (copied from 0x219c920 / 0x219c930, stored at
  * 0x51157a0 / 0x5115790 / 0x5115780): done here the same way, a call at a time. xmm0..6 end as the translation leaves them
  * (the last node, the key, the zero vector, m3, m4, the last compare mask and the last masked difference). */
-#define G_FN_B09D50_FLAGS 0x51157b0u
+#define B09D50_FLAGS GF(Fn00b09d50Statics, G_B09D50_STATICS, flags)
+#define B09D50_STATIC_ADDR(f) GADDR(Fn00b09d50Statics, G_B09D50_STATICS, f)
+#define B09D50_M4_SRC 0x219c920u /* the initial m4 / m3 (const data) */
+#define B09D50_M3_SRC 0x219c930u
 static void XRC_CC gen_Fn00b09d50(XCtx *c) {
 	u8 *const xm = XM;
-	u32 esp = c->esp, start = M32(esp + 4), key = M32(esp + 8), self = c->ecx, base, end, f, p;
+	u32 start = arg_u32(c, 1), key = arg_u32(c, 2), self = c->ecx, base, end, f, p;
 	X128 X0 = c->x[0], X1, X2, X3, X4, X5 = c->x[5], X6 = c->x[6];
 	__m128i q, s4, s3, s2;
 	q = _mm_loadu_si128((const __m128i *)(xm + key));
 	X1.vi = q;
-	f = M32(G_FN_B09D50_FLAGS);
-	base = M32(self + 0x18); end = M32(self + 0x1c);
-	if (!(f & 1u)) { s4 = _mm_loadu_si128((const __m128i *)(xm + 0x219c920u)); f |= 1u; M32(G_FN_B09D50_FLAGS) = f; _mm_storeu_si128((__m128i *)(xm + 0x51157a0u), s4); }
-	else s4 = _mm_loadu_si128((const __m128i *)(xm + 0x51157a0u));
-	if (!(f & 2u)) { s3 = _mm_loadu_si128((const __m128i *)(xm + 0x219c930u)); f |= 2u; M32(G_FN_B09D50_FLAGS) = f; _mm_storeu_si128((__m128i *)(xm + 0x5115790u), s3); }
-	else s3 = _mm_loadu_si128((const __m128i *)(xm + 0x5115790u));
-	if (!(f & 4u)) { s2 = _mm_setzero_si128(); f |= 4u; M32(G_FN_B09D50_FLAGS) = f; _mm_storeu_si128((__m128i *)(xm + 0x5115780u), s2); }
-	else s2 = _mm_loadu_si128((const __m128i *)(xm + 0x5115780u));
+	f = B09D50_FLAGS;
+	base = GF(QuantAabbTree, self, nodes); end = GF(QuantAabbTree, self, nodes_end);
+	if (!(f & B09D50_M4_INIT)) { s4 = _mm_loadu_si128((const __m128i *)(xm + B09D50_M4_SRC)); f |= B09D50_M4_INIT; B09D50_FLAGS = f; _mm_storeu_si128((__m128i *)(xm + B09D50_STATIC_ADDR(m4)), s4); }
+	else s4 = _mm_loadu_si128((const __m128i *)(xm + B09D50_STATIC_ADDR(m4)));
+	if (!(f & B09D50_M3_INIT)) { s3 = _mm_loadu_si128((const __m128i *)(xm + B09D50_M3_SRC)); f |= B09D50_M3_INIT; B09D50_FLAGS = f; _mm_storeu_si128((__m128i *)(xm + B09D50_STATIC_ADDR(m3)), s3); }
+	else s3 = _mm_loadu_si128((const __m128i *)(xm + B09D50_STATIC_ADDR(m3)));
+	if (!(f & B09D50_ZERO_INIT)) { s2 = _mm_setzero_si128(); f |= B09D50_ZERO_INIT; B09D50_FLAGS = f; _mm_storeu_si128((__m128i *)(xm + B09D50_STATIC_ADDR(zero)), s2); }
+	else s2 = _mm_loadu_si128((const __m128i *)(xm + B09D50_STATIC_ADDR(zero)));
 	X4.vi = s4; X3.vi = s3; X2.vi = s2;
 	p = start;
 	if (p != end) {
@@ -213,12 +217,12 @@ struct Spec {
 	unsigned long long calls, bad, nanonly;
 };
 
-static void rg_out4(XCtx *c, u32 *at, u32 *len) { at[0] = M32(c->esp + 4); len[0] = 16; }
-static void rg_out16(XCtx *c, u32 *at, u32 *len) { at[0] = M32(c->esp + 4); len[0] = 64; }
+static void rg_out4(XCtx *c, u32 *at, u32 *len) { at[0] = arg_u32(c, 1); len[0] = 16; }
+static void rg_out16(XCtx *c, u32 *at, u32 *len) { at[0] = arg_u32(c, 1); len[0] = 64; }
 static void rg_sincos(XCtx *c, u32 *at, u32 *len) { at[0] = c->eax; len[0] = 16; at[1] = c->ecx; len[1] = 16; }
-static void rg_out32(XCtx *c, u32 *at, u32 *len) { at[0] = M32(c->esp + 4); len[0] = 32; }
-static void rg_compose(XCtx *c, u32 *at, u32 *len) { at[0] = M32(c->esp + 8); len[0] = 0xa0; }
-static void rg_out48(XCtx *c, u32 *at, u32 *len) { at[0] = M32(c->esp + 4); len[0] = 48; }
+static void rg_out32(XCtx *c, u32 *at, u32 *len) { at[0] = arg_u32(c, 1); len[0] = 32; }
+static void rg_compose(XCtx *c, u32 *at, u32 *len) { at[0] = arg_u32(c, 2); len[0] = 0xa0; }
+static void rg_out48(XCtx *c, u32 *at, u32 *len) { at[0] = arg_u32(c, 1); len[0] = 48; }
 static void rg_none(XCtx *c, u32 *at, u32 *len) { (void)c; at[0] = 0; len[0] = 0; }
 
 static void su_tv(XCtx *c, u32 base, unsigned long long *rng, unsigned it);
@@ -342,7 +346,7 @@ static u32 fbits(unsigned long long *r, int mixed) {
 }
 static void fillf(u32 at, int n, unsigned long long *r, int mixed) {
 	int i;
-	for (i = 0; i < n; i++) M32(at + 4u * (u32)i) = fbits(r, mixed);
+	for (i = 0; i < n; i++) GARR32(at, i) = fbits(r, mixed);
 }
 /* out sometimes overlaps an input (in place; shifted by a lane or a row) */
 static u32 pick_out(unsigned long long *r, u32 plain, u32 a, u32 b) {
@@ -360,8 +364,8 @@ static u32 pick_out(unsigned long long *r, u32 plain, u32 a, u32 b) {
 static void push_args(XCtx *c, u32 base, int n, const u32 *a) {
 	int i;
 	c->esp = base + 0x1000u;
-	M32(c->esp) = 0x12345678u;
-	for (i = 0; i < n; i++) M32(c->esp + 4u + 4u * (u32)i) = a[i];
+	set_arg_u32(c, 0, 0x12345678u);
+	for (i = 0; i < n; i++) set_arg_u32(c, 1u + (u32)i, a[i]);
 }
 static void su_tv(XCtx *c, u32 base, unsigned long long *r, unsigned it) {
 	u32 m = base, v = base + 0x40, o, a[2];
@@ -408,7 +412,7 @@ static void su_in4(XCtx *c, u32 base, unsigned long long *r, unsigned it) {
 static void su_sincos(XCtx *c, u32 base, unsigned long long *r, unsigned it) {
 	int mx = (it & 3) != 0, k;
 	c->esp = base + 0x1000u;
-	M32(c->esp) = 0x12345678u;
+	set_arg_u32(c, 0, 0x12345678u);
 	for (k = 0; k < 4; k++) c->x[0].u[k] = fbits(r, mx);
 	for (k = 1; k < 8; k++) { int j; for (j = 0; j < 4; j++) c->x[k].u[j] = rnd(r); }
 	c->eax = base; c->ecx = base + 0x40;
@@ -479,8 +483,8 @@ static void su_b09d50(XCtx *c, u32 base, unsigned long long *r, unsigned it) {
 	int mx = (it & 3) != 0;
 	(void)mx;
 	for (i = 0; i < 8; i++) q[i] = (rnd(r) % 3u == 0) ? 0xffffu : (rnd(r) % 4u == 0) ? 0u : rnd(r) & 0xffffu;
-	for (i = 0; i < 8; i++) M16(key + 2u * i) = (u16)q[i];
-	M32(base + 0x18) = nb; M32(base + 0x1c) = nb + 16u * n;
+	for (i = 0; i < 8; i++) GFI(QuantAabbNode, key, w, i) = (u16)q[i];
+	GF(QuantAabbTree, base, nodes) = nb; GF(QuantAabbTree, base, nodes_end) = nb + 16u * n;
 	for (k = 0; k < n; k++)
 		for (i = 0; i < 8; i++) {
 			u32 v = rnd(r) % 8u, w;
@@ -493,13 +497,13 @@ static void su_b09d50(XCtx *c, u32 base, unsigned long long *r, unsigned it) {
 			}
 			if (i == 3) w = k + 1u + rnd(r) % (n - k);                 /* forward only: no cycle */
 			if (i == 7 && rnd(r) % 2u) w = 0xffffu;
-			M16(nb + 16u * k + 2u * i) = (u16)w;
+			GFI(QuantAabbNode, nb + 16u * k, w, i) = (u16)w;
 		}
 	/* the guard bits (any of the 8 combinations, and a stray high bit) and the statics: all-ones / zero / random words */
-	M32(0x51157b0u) = f & 0x87u;
+	B09D50_FLAGS = f & 0x87u;
 	for (i = 0; i < 3; i++) {
 		u32 j, m = rnd(r) % 4u;
-		for (j = 0; j < 8; j++) M16(0x5115780u + 16u * i + 2u * j) = (u16)(m == 0 ? 0xffffu : m == 1 ? 0u : rnd(r) & 0xffffu);
+		for (j = 0; j < 8; j++) GFI(QuantAabbNode, G_B09D50_STATICS + 16u * i, w, j) = (u16)(m == 0 ? 0xffffu : m == 1 ? 0u : rnd(r) & 0xffffu);
 	}
 	start = nb + 16u * (rnd(r) % (n + 1u));
 	a[0] = start; a[1] = key; push_args(c, base, 2, a); c->ecx = base;
@@ -511,10 +515,10 @@ static void su_b09d50(XCtx *c, u32 base, unsigned long long *r, unsigned it) {
 static void su_b8edb0(XCtx *c, u32 base, unsigned long long *r, unsigned it) {
 	u32 t1 = base + 0x10u, vec = base + 0x40u, tab = base + 0x100u, o, a[5], i, k;
 	int mx = (it & 3) != 0;
-	M16(base) = (u16)(rnd(r) % 4u);
+	GF(TableSelector, base, index) = (u16)(rnd(r) % 4u);
 	for (k = 0; k < 4; k++) {
-		M16(t1 + 8u * k) = (u16)(rnd(r) % 13u); M16(t1 + 8u * k + 2u) = (u16)(rnd(r) % 13u);
-		M16(t1 + 8u * k + 4u) = (u16)(rnd(r) % 13u); M16(t1 + 8u * k + 6u) = (u16)rnd(r);
+		GF(TableEntry8, t1 + 8u * k, idx0) = (u16)(rnd(r) % 13u); GF(TableEntry8, t1 + 8u * k, idx1) = (u16)(rnd(r) % 13u);
+		GF(TableEntry8, t1 + 8u * k, idx2) = (u16)(rnd(r) % 13u); GF(TableEntry8, t1 + 8u * k, unk_06) = (u16)rnd(r);
 	}
 	fillf(vec, 4, r, mx); fillf(tab, 0xc0, r, mx); fillf(base + 0x80, 12, r, mx);
 	o = pick_out(r, base + 0x80, vec, vec + 8u);
@@ -530,8 +534,8 @@ static void su_color(XCtx *c, u32 base, unsigned long long *r, unsigned it) {
 	for (i = 0; i < 4; i++) {
 		u32 v = rnd(r) % 6u;
 		/* mostly byte-range values (what the game feeds it), sometimes anything (negative, > 255, huge, NaN, inf) */
-		if (v < 3) { float t = (float)(rnd(r) % 2560u) / 10.0f; if (rnd(r) & 1u) t = (float)(int)t; memcpy(&v, &t, 4); M32(base + 4u * i) = v; }
-		else M32(base + 4u * i) = fbits(r, mx);
+		if (v < 3) { float t = (float)(rnd(r) % 2560u) / 10.0f; if (rnd(r) & 1u) t = (float)(int)t; memcpy(&v, &t, 4); GARR32(base, i) = v; }
+		else GARR32(base, i) = fbits(r, mx);
 	}
 	c->fcw = fcws[rnd(r) % 6u];
 	push_args(c, base, 0, (const u32 *)0); c->ecx = base;

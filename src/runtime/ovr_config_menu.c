@@ -20,16 +20,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include "xrc_rt.h"
+#include "guest_types.h"
 
 #define CFG_ID       22u
-#define CFG_ROWS_MAX 29u
 #define FN_ROWS      0x00809600u
 #define FN_CONFIRM   0x0080d0a0u
 #define FN_TEXT      0x007a4550u
 #define FN_GET       0x007bfec0u /* cdecl int get(id) */
 #define FN_SOUND     0x007a6d50u /* thiscall ([050f19f4]) play_se(n) */
 #define FN_GUI_ALLOC 0x007b6b70u /* cdecl void *gui_alloc(size) (freed by GuiObject::Free 007b6a70) */
-#define G_UI         0x050f19f4u
+#define G_UI         G_GUIMGR
 #define SE_CONFIRM   4u
 
 /* the runtime's settings overlay (xrc_menu.c); this weak stub until it exists */
@@ -49,16 +49,16 @@ void XRC_CC xo_00809600(XCtx *c) {
 	if (!orig) orig = xrc_translation_of(FN_ROWS);
 	orig(c);
 	if (off()) return;
-	n = M32(list + 0xe8);
+	n = GF(ConfigRowList, list, count);
 	if (n >= CFG_ROWS_MAX) return;
-	for (k = 0; k < n; k++) if (M32(list + 4 * k) == CFG_ID) return;
+	for (k = 0; k < n; k++) if (GFI(ConfigRowList, list, ids, k) == CFG_ID) return;
 	{
 		u32 a[1] = {CFG_ID}, eax = c->eax, ecx = c->ecx, edx = c->edx, eip = c->eip, v;
 		v = xrc_call_guest(c, FN_GET, 1, a);
 		c->eax = eax; c->ecx = ecx; c->edx = edx; c->eip = eip; /* (the call leaves eip at its return magic) */
-		M32(list + 4 * n) = CFG_ID;
-		M32(list + 0x74 + 4 * n) = v;
-		M32(list + 0xe8) = n + 1;
+		GFI(ConfigRowList, list, ids, n) = CFG_ID;
+		GFI(ConfigRowList, list, choice, n) = v;
+		GF(ConfigRowList, list, count) = n + 1;
 	}
 }
 
@@ -66,9 +66,9 @@ void XRC_CC xo_0080d0a0(XCtx *c) {
 	static XFn orig;
 	u32 t = c->ecx, l, sel;
 	if (!orig) orig = xrc_translation_of(FN_CONFIRM);
-	if (!off() && !M32(t + 0xa8) && !M32(t + 0xa0) && !M32(t + 0xb4) && (l = M32(t + 0x8c)) != 0 && !M32(l + 0x1c8)) {
-		sel = M32(l + 0x1dc);
-		if (sel < M32(l + 0xc4 + 0xe8) && M32(l + 0xc4 + 4 * sel) == CFG_ID) {
+	if (!off() && !GF(ConfigMenu, t, unk_a8) && !GF(ConfigMenu, t, unk_a0) && !GF(ConfigMenu, t, unk_b4) && (l = GF(ConfigMenu, t, list)) != 0 && !GF(ConfigListObj, l, unk_1c8)) {
+		sel = GF(ConfigListObj, l, selected_row);
+		if (sel < GF(ConfigListObj, l, rows.count) && GFI(ConfigListObj, l, rows.ids, sel) == CFG_ID) {
 			u32 a[1] = {SE_CONFIRM};
 			fprintf(stderr, "xrc: config menu: PC Graphics row confirmed\n");
 			c->ecx = M32(G_UI);
@@ -93,7 +93,7 @@ static u32 gstr(XCtx *c, const char *s) {
 
 void XRC_CC xo_007a4550(XCtx *c) {
 	static XFn orig;
-	u32 key = M32(c->esp + 4);
+	u32 key = arg_u32(c, 1);
 	if (!orig) orig = xrc_translation_of(FN_TEXT);
 	if (key && !off() && M8(key) == '$' && M8(key + 1) == 'f' && M8(key + 6) == '_' && M8(key + 7) == '3') {
 		const char *k = (const char *)(xrc_mem + key);
