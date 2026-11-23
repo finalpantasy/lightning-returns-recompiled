@@ -211,7 +211,18 @@ static sbool ls_write(const char *name, const void *data, int n) {
 		if (f) {
 			ok = n ? fwrite(cp ? cp : data, 1, (size_t)n, f) == (size_t)n : 1;
 			if (fflush(f) || fclose(f)) ok = 0;
-			if (!ok || !MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) { DeleteFileA(tmp); ok = 0; }
+			if (ok) { /* (longrun: an antivirus / cloud-sync / indexer scan of the old save can hold it for a moment -- access denied or a sharing violation -- so the move is retried for about 3 s before giving up) */
+				int tries;
+				DWORD err = 0;
+				for (tries = 0; tries < 10; tries++) {
+					if (MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) break;
+					err = GetLastError();
+					Sleep(25u << (tries < 7 ? tries : 7));
+				}
+				if (tries == 10) { fprintf(stderr, "xrc: save: write of %s FAILED (move error %lu after %d tries)\n", name, (unsigned long)err, tries); ok = 0; }
+				else if (tries) fprintf(stderr, "xrc: save: %s needed %d move retries (error %lu) before it was written\n", name, tries, (unsigned long)err);
+			}
+			if (!ok) DeleteFileA(tmp);
 		} else ok = 0;
 		if (rel) xrc_gil_acquire();
 		free(cp);

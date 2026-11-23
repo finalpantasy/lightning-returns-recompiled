@@ -1513,7 +1513,7 @@ u8 *xrc_png_decode(const u8 *d, size_t max, u32 *pw, u32 *ph);
 static u32 pow2up(u32 v) { u32 p = 1; while (p < v) p <<= 1; return p; }
 /* a DDS file's format (D3DFMT), 0 if not one handled: the DXT FourCCs, 32-bit ARGB / XRGB / ABGR, 16-bit 565 */
 static u32 dds_format(u32 h) {
-	u32 pf = h + 76, fl = M32(pf + 4), fcc = M32(pf + 8), bits = M32(pf + 12), r = M32(pf + 16), a = M32(pf + 28);
+	u32 pf = h + 72, fl = M32(pf + 4), fcc = M32(pf + 8), bits = M32(pf + 12), r = M32(pf + 16), a = M32(pf + 28);
 	if (fl & 4) return fcc == 0x74 ? 116 : fcc == 0x71 ? 113 : fcc == 0x72 ? 114 : fcc; /* FourCC (or a D3DFMT number) */
 	if (bits == 32) return r == 0x00ff0000u ? (a && (fl & 1) ? 21 : 22) : (a && (fl & 1) ? 32 : 33);
 	if (bits == 16 && r == 0xf800u) return 23;

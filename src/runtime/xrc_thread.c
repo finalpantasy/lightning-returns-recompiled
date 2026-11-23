@@ -416,6 +416,9 @@ void xrc_sleep_c(u32 ms, int cls) {
 /* ============================================================================================ threads */
 typedef struct {
 	u32 tid, start, param, teb, stack_lo, stack_hi;
+	u32 raw_stack, raw_teb, raw_tls; /* (longrun) the heap blocks behind the stack / TEB / static TLS: freed when the thread ends */
+	int pins; /* (longrun) open kernel handles on the thread: its slot is not reused while any is */
+	volatile int gone; /* (longrun) the host thread has finished with this struct: the slot is free for a new thread once pins is 0 */
 	volatile int done;
 	u32 code;
 	jmp_buf exit_jb;
@@ -430,7 +433,7 @@ typedef struct {
 	volatile unsigned long long gil_hold, gil_wait;
 	volatile unsigned long long wl_os, wl_gil, wl_n; /* per frame: the worst wake-up (signal to running again) and the worst GIL wait after it, us; wakes */
 } Thread;
-#define MAXTHREADS 64
+#define MAXTHREADS 256 /* (longrun: was 64; slots of finished threads are now reused, this is the live + still-referenced count) */
 static Thread threads[MAXTHREADS];
 static int nthreads = 1; /* 0: the main thread */
 
@@ -563,8 +566,9 @@ void xrc_thread_wake_report(FILE *f) {
 }
 
 /* the TEB of a thread (as setup_thread in xrc_rt.c does for the main one) */
-static u32 make_teb(u32 tid, u32 lo, u32 hi) {
+static u32 make_teb(Thread *th, u32 tid, u32 lo, u32 hi) {
 	u32 raw = xrc_heap_alloc(0x2000, 1), t = (raw + 0xfffu) & ~0xfffu, tls, n;
+	th->raw_teb = raw;
 	M32(t + 0x00) = 0xffffffffu;
 	M32(t + 0x04) = hi;
 	M32(t + 0x08) = lo;
@@ -576,6 +580,7 @@ static u32 make_teb(u32 tid, u32 lo, u32 hi) {
 	/* static TLS: a fresh copy of the template */
 	n = xrc_tls_hi > xrc_tls_lo ? xrc_tls_hi - xrc_tls_lo : 0;
 	tls = xrc_heap_alloc(n + xrc_tls_zfill + 16, 1);
+	th->raw_tls = tls;
 	if (n) memcpy(xrc_mem + tls, xrc_mem + xrc_tls_lo, n);
 	M32(t + 0x800) = tls;
 	return t;
@@ -632,30 +637,54 @@ static void *thread_main(void *p) {
 	}
 	t->done = 1;
 	nthreads_alive--;
+	/* (longrun) the thread's guest stack, TEB and static TLS go back to the heap (a freed block keeps its contents) */
+	xrc_heap_free(t->raw_stack); xrc_heap_free(t->raw_teb); xrc_heap_free(t->raw_tls);
+	t->raw_stack = t->raw_teb = t->raw_tls = 0;
 	if (xrc_tool_env("XRC_TRACE_THREADS")) fprintf(stderr, "xrc: thread %x exited (%u)\n", t->tid, t->code);
 	xrc_state_changed();
 	xrc_gil_release();
+	t->gone = 1; /* (last touch of *t: the slot may be reused from here) */
 	return 0;
 }
 
+/* (longrun) a slot for a new thread: one whose thread has ended and that no open handle refers to (reused, its old host
+ * clock handle closed), else the next unused; 0 when all MAXTHREADS are live or referenced. A thread's id is 0x1004 + 4 *
+ * slot, so ids are reused too, as Windows reuses them. The slot comes back zeroed with done = 0. */
+static Thread *thread_slot(void) {
+	int i;
+	Thread *t = 0;
+	for (i = 1; i < nthreads; i++)
+		if (threads[i].gone && threads[i].pins <= 0) { t = &threads[i]; break; }
+	if (t) {
+#ifdef _WIN32
+		if (t->h) CloseHandle((HANDLE)t->h);
+#endif
+	} else {
+		if (nthreads == MAXTHREADS) return 0;
+		t = &threads[nthreads++];
+	}
+	memset(t, 0, sizeof *t);
+	return t;
+}
+/* a kernel handle on thread slot i was made (d = 1) or closed (d = -1) */
+void xrc_thread_pin(int i, int d) { if (i > 0 && i < nthreads) threads[i].pins += d; }
 /* a new guest thread running start(param); returns its index (0 on failure), *tid its id */
 int xrc_thread_create(u32 start, u32 param, u32 stack, u32 *tid) {
 	Thread *t;
 	pthread_attr_t at;
 	u32 raw;
-	if (nthreads == MAXTHREADS) return 0;
-	t = &threads[nthreads++];
-	memset(t, 0, sizeof *t);
+	if (!(t = thread_slot())) return 0;
 	if (stack < 0x40000u) stack = 0x100000u;
 	stack = (stack + 0xfffu) & ~0xfffu;
 	raw = xrc_heap_alloc(stack + 0x1000u, 0);
-	if (!raw) { nthreads--; return 0; }
+	if (!raw) { t->done = 1; t->gone = 1; t->tid = 0; return 0; } /* (the slot stays free) */
+	t->raw_stack = raw;
 	t->stack_lo = (raw + 0xfffu) & ~0xfffu;
 	t->stack_hi = t->stack_lo + stack;
 	t->tid = 0x1004u + 4u * (u32)(t - threads);
 	t->start = start;
 	t->param = param;
-	t->teb = make_teb(t->tid, t->stack_lo, t->stack_hi);
+	t->teb = make_teb(t, t->tid, t->stack_lo, t->stack_hi);
 	nthreads_alive++;
 	/* host stack: the translated code recurses as deep as the guest does, with bigger frames */
 	pthread_attr_init(&at);
@@ -683,10 +712,11 @@ void xrc_thread_adopt(XCtx *c) {
 	t = &threads[nthreads++];
 	memset(t, 0, sizeof *t);
 	raw = xrc_heap_alloc(stack + 0x1000u, 0);
+	t->raw_stack = raw;
 	t->stack_lo = (raw + 0xfffu) & ~0xfffu;
 	t->stack_hi = t->stack_lo + stack;
 	t->tid = 0x1004u + 4u * (u32)(t - threads);
-	t->teb = make_teb(t->tid, t->stack_lo, t->stack_hi);
+	t->teb = make_teb(t, t->tid, t->stack_lo, t->stack_hi);
 	cur = (int)(t - threads);
 	self_clock(t);
 	xrc_teb = t->teb;

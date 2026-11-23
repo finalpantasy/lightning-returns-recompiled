@@ -92,16 +92,73 @@ static u32 heap_limit(void) { return xrc_va_down ? va_next : XRC_HEAP_HI; }
 static u32 big_base[NBIG], big_cap[NBIG];
 static u8 big_free[NBIG];
 static unsigned nbig;
-static u32 big_alloc(u32 n) {
-	u32 cap = (n + 16u + 0xffffu) & ~0xffffu, best = NBIG, k, p;
-	if (cap < n) return 0;
+/* (longrun) A free table slot for a block: a dead one (left by a merge), else the next unused; NBIG if the table is full. */
+static unsigned big_slot(void) {
+	unsigned k;
+	for (k = 0; k < nbig; k++) if (!big_cap[k] && !big_free[k]) return k;
+	return nbig < NBIG ? nbig++ : NBIG;
+}
+static int big_cmp(const void *a, const void *b) {
+	u32 x = big_base[*(const unsigned *)a], y = big_base[*(const unsigned *)b];
+	return x < y ? -1 : x > y;
+}
+/* (longrun) Free blocks that touch (the region is carved in address order, so a freed run of them is one hole) are
+ * merged into one, the later table entries left dead (cap 0, not free: reused by big_slot): without it a long session's
+ * mix of sizes leaves many free fragments none of which fits the next request, and the region (or the 8192 table slots)
+ * runs out. Run only when a request would otherwise fail. Returns whether anything merged. */
+static int big_coalesce(void) {
+	static unsigned idx[NBIG];
+	unsigned k, n = 0, i, last = 0;
+	int merged = 0;
+	for (k = 0; k < nbig; k++) if (big_free[k] && big_cap[k]) idx[n++] = k;
+	if (n < 2) return 0;
+	qsort(idx, n, sizeof idx[0], big_cmp);
+	last = idx[0];
+	for (i = 1; i < n; i++) {
+		k = idx[i];
+		if (big_base[last] + big_cap[last] == big_base[k]) {
+			big_cap[last] += big_cap[k];
+			big_free[k] = 0; big_cap[k] = 0; big_base[k] = 0;
+			merged = 1;
+		} else last = k;
+	}
+	return merged;
+}
+/* (longrun) free block b is to serve a request of cap bytes: keep cap, the rest (>= 64 KB) goes back as a free block */
+static void big_split(unsigned b, u32 cap) {
+	u32 rest = big_cap[b] - cap;
+	unsigned s;
+	if (rest < 0x10000u || (s = big_slot()) == NBIG) return;
+	big_base[s] = big_base[b] + cap; big_cap[s] = rest; big_free[s] = 1;
+	big_cap[b] = cap;
+}
+/* (longrun) a free block of at least cap bytes taken for good (VirtualAlloc, when the region itself is full): its address, or 0 */
+static u32 big_take_free(u32 cap) {
+	unsigned k, best = NBIG;
+	if (big_coalesce()) {}
 	for (k = 0; k < nbig; k++)
 		if (big_free[k] && big_cap[k] >= cap && (best == NBIG || big_cap[k] < big_cap[best])) best = k;
-	if (best != NBIG && big_cap[best] - cap > cap / 4 && va_room() >= cap) best = NBIG;
+	if (best == NBIG) return 0;
+	big_split(best, cap);
+	big_free[best] = 0;
+	return big_base[best];
+}
+static u32 big_alloc(u32 n) {
+	u32 cap = (n + 16u + 0xffffu) & ~0xffffu, best, k, p;
+	int retried = 0;
+	if (cap < n) return 0;
+retry:
+	best = NBIG;
+	for (k = 0; k < nbig; k++)
+		if (big_free[k] && big_cap[k] >= cap && (best == NBIG || big_cap[k] < big_cap[best])) best = k;
+	if (best != NBIG && big_cap[best] - cap > cap / 4) { /* (a free block that wastes over a quarter: a fresh one if the region has room, else (longrun) split it) */
+		if (va_room() >= cap) best = NBIG; else big_split(best, cap);
+	}
 	if (best == NBIG) {
 		u32 a;
-		if (nbig == NBIG || !(a = va_take(cap))) return 0;
-		best = nbig++;
+		unsigned s = big_slot();
+		if (s == NBIG || !(a = va_take(cap))) { if (!retried++ && big_coalesce()) goto retry; return 0; }
+		best = s;
 		big_base[best] = a;
 		big_cap[best] = cap;
 	}
@@ -272,7 +329,7 @@ static void hle_VirtualAlloc(XCtx *c) {
 	u32 addr = A(0), size = A(1), p;
 	if (addr) RET(addr & ~0xfffu, 4);
 	size = (size + 0xffffu) & ~0xffffu; /* allocation granularity 64 KB */
-	if (!size || !(p = va_take(size))) {
+	if (!size || !(!(p = va_take(size)) ? (p = big_take_free(size)) : p)) { /* (longrun: a free big block when the region is full) */
 		fprintf(stderr, "xrc: VirtualAlloc(%u bytes) failed: %u MB free (VirtualFree releases nothing yet)\n", A(1), va_room() >> 20);
 		set_err(ERROR_NOT_ENOUGH_MEMORY);
 		RET(0, 4);

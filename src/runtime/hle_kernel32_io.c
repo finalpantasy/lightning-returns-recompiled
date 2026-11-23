@@ -385,6 +385,7 @@ static void hle_WaitForSingleObject(XCtx *c) {
 		RET(r ? WAIT_OBJECT_0 : WAIT_TIMEOUT, 2);
 	}
 }
+void xrc_thread_pin(int i, int d); /* (xrc_thread.c) */
 /* CreateThread(attr, stack, start, param, flags, *tid) */
 static void hle_CreateThread(XCtx *c) {
 	Obj *o;
@@ -395,6 +396,7 @@ static void hle_CreateThread(XCtx *c) {
 	if (!t) { set_err(8 /* ERROR_NOT_ENOUGH_MEMORY */); RET(0, 6); }
 	h = new_obj(O_THREAD, &o);
 	o->thread = t;
+	xrc_thread_pin(t, 1); /* (longrun) the slot is not reused while the handle is open */
 	if (A(5)) M32(A(5)) = tid;
 	RET(h, 6);
 }
@@ -406,6 +408,7 @@ static void hle_OpenThread(XCtx *c) {
 	if (t < 0) { set_err(87); RET(0, 3); }
 	h = new_obj(O_THREAD, &o);
 	o->thread = t;
+	xrc_thread_pin(t, 1); /* (longrun) the slot is not reused while the handle is open */
 	RET(h, 3);
 }
 static void hle_ExitThread(XCtx *c) { xrc_thread_exit(A(0)); }
@@ -679,6 +682,7 @@ static void hle_CloseHandle(XCtx *c) {
 	if (h == H_STDIN || h == H_STDOUT || h == H_STDERR || h == 0xfffffffeu || h == 0xffffffffu) RET(1, 1);
 	if (!o) { set_err(ERROR_INVALID_HANDLE); RET(0, 1); }
 	if (--o->refs > 0) RET(1, 1);
+	if (o->kind == O_THREAD) xrc_thread_pin(o->thread, -1);
 	if (o->kind == O_FILE && o->f) fclose(o->f);
 #if HAVE_DIRENT
 	if (o->kind == O_FIND && o->dir) closedir((DIR *)o->dir);
