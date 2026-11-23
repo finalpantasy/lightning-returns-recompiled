@@ -33,6 +33,7 @@ endorsed by Square Enix.
 - **Math speedups.** Native replacements for the hottest matrix, vector, quaternion and CRT math helpers
   (`src/runtime/ovr_math.c`, with a table generated from your own translated pages by `tools/ovr_math/gen_ovr_math.py`).
 - **Faster loading** (file I/O and load-path work).
+- **Audio fix.** In-game music and sound effects are back: the submix at stage 255 was never mixed.
 - **Draw-path speedup.** Fewer redundant state and bind calls, push descriptors for the used bindings only, and a sampler cache; `XRC_PROF_DRAW=1` logs a per-300-frame draw profile.
 - **Typed structs and naming.** The runtime's guest-memory accesses use named, size-checked structs (`src/runtime/guest_types.h`,
   about 100 structs with compile-time offset checks) instead of raw offsets, and `tools/names` plus `docs/` hold the naming work on the

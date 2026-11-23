@@ -340,12 +340,20 @@ static void mix_end(void) {
 	Voice *m = master_voice();
 	int k, st, n;
 	u32 stages_done = 0;
-	for (st = 0; st < 64 && stages_done < 1u << 31; st++) {
+	for (;;) { /* the stages in ascending order, whatever their values (LR's Miles uses 2, 3 and 255) */
 		int any = 0;
+		u32 minst = 0xffffffffu;
+		for (k = 0; k < nvoices; k++) {
+			Voice *v = &voices[k];
+			if (v->alive && v->kind == V_SUBMIX && v->in && v->stage >= stages_done && v->stage < minst) minst = v->stage;
+		}
+		if (minst == 0xffffffffu) break;
+		st = (int)minst;
+		stages_done = minst + 1;
 		for (k = 0; k < nvoices; k++) {
 			Voice *v = &voices[k];
 			int j;
-			if (!v->alive || v->kind != V_SUBMIX || (int)v->stage != st || !v->in) continue;
+			if (!v->alive || v->kind != V_SUBMIX || v->stage != (u32)st || !v->in) continue;
 			any = 1;
 			for (j = 0; j < nsends(v) && j < 8; j++) {
 				Voice *dst = dest_of(v, j);
@@ -368,7 +376,7 @@ static void mix_end(void) {
 				}
 			}
 		}
-		if (!any && st > 32) break;
+		(void)any;
 	}
 	if (!m || !m->in || mix_off == 1) return;
 	if (mix_off < 0) {
@@ -394,6 +402,29 @@ static void mix_end(void) {
 		mix_target = target;
 	}
 	n = m->in_n * (int)(m->channels ? m->channels : 2);
+	if (xrc_tool_env("XRC_XA2_LOG")) { /* once a second: the master's input peak, its volume, the source voices */
+		static unsigned long long nx; static float pk;
+		unsigned long long t = now_us();
+		int q;
+		for (q = 0; q < n; q++) { float a = fabsf(m->in[q]); if (a > pk) pk = a; }
+		if (t >= nx) {
+			int ns = 0, nst = 0, nq = 0, nod = 0;
+			nx = t + 1000000;
+			for (q = 0; q < nvoices; q++) if (voices[q].alive && voices[q].kind == V_SOURCE) { ns++; nst += voices[q].started != 0; nq += voices[q].qn != 0; nod += dest_of(&voices[q], 0) == 0; }
+			fprintf(stderr, "xrc: xaudio2: mix peak %.4f master vol %.3f chvol %.2f %.2f; %d src voices, %d started, %d queued, %d no dest\n", pk, m->volume, m->chvol[0], m->chvol[1], ns, nst, nq, nod);
+			pk = 0;
+			for (q = 0; q < nvoices; q++) if (voices[q].alive && voices[q].kind != V_SOURCE) {
+				Voice *v = &voices[q]; float p2 = 0; int z2;
+				for (z2 = 0; z2 < v->in_n * (int)(v->channels ? v->channels : 1); z2++) { float a2 = fabsf(v->in[z2]); if (a2 > p2) p2 = a2; }
+				fprintf(stderr, "xrc: xaudio2:  dstvoice %d kind %d stage %u %uch %uHz in_n %d peak %.4f vol %.2f nsend %d send0 %d\n", q, v->kind, v->stage, v->channels, v->rate, v->in_n, p2, v->volume, v->nsend, v->nsend > 0 ? (int)M32(v->send[0] + 4) : -1);
+			}
+			for (q = 0; q < nvoices; q++) if (voices[q].alive && voices[q].kind == V_SOURCE && voices[q].started && voices[q].qn) {
+				Voice *v = &voices[q]; Buf *b = &v->q[v->qhead]; int z = 0; u32 i;
+				for (i = 0; i < b->bytes && i < 4096; i++) z += xrc_mem[b->data + i] != 0;
+				fprintf(stderr, "xrc: xaudio2:  v%d tag %x %uch %uHz vol %.3f ch0 %.2f ratio %.3f nsend %d mat %d bytes %u play %u+%u pos %.0f hs %d nz4k %d acc %.0f oi %d dst_in %d mat %.2f %.2f %.2f %.2f dec %.4f\n", q, v->tag, v->channels, v->rate, v->volume, v->chvol[0], v->ratio, v->nsend, v->has_mat[0], b->bytes, b->play_begin, b->play_len, v->pos, v->head_started, z, v->acc, v->oi, dest_of(v,0) ? dest_of(v,0)->in_n : -1, v->mat[0][0], v->mat[0][1], v->mat[0][2], v->mat[0][3], ({float ff[8]; frame_at(v, b, (long long)v->pos + 5, ff); ff[0];}));
+			}
+		}
+	}
 	if (n > mix_pcm_cap) { mix_pcm_cap = n * 2; mix_pcm = (short *)realloc(mix_pcm, (size_t)mix_pcm_cap * sizeof(short)); }
 	for (k = 0; k < n; k++) {
 		float x = m->in[k] * m->volume * m->chvol[k % (int)(m->channels ? m->channels : 2) & 7] * 32767.0f;
