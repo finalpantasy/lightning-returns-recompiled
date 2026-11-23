@@ -23,6 +23,8 @@ endorsed by Square Enix.
 - **Shadow fixes.** Shadow stability (stops the pop-in from frame-to-frame visibility flicker) and a shadow-map fix for the far ground
   going dark in blocks. `XRC_POP_ZSHADOW` picks the shadow-map behavior: `keep` (default), `drop` or `old`.
   ![Night farm at 720p with the shadow fixes](docs/screenshots/farm-shadows-720p.jpg)
+- **Native-resolution output.** The game is told the real monitor size (per-monitor DPI aware), so it makes a native back buffer; fixes the 720p final frame.
+  `XRC_BB_NATIVE=0` restores the old 1280x720 report, `XRC_DPI_AWARE=0` skips DPI awareness.
 - **Frame-pacing fix** and a steadier frame limiter (the game's 20 ms vblank spin is replaced by one precise wait), 60 fps gameplay.
 - **F10 menu.** An in-game overlay that edits `lr.cfg` and applies most options at once: render resolution, display scaling, anti-aliasing,
   sharpening (contrast-adaptive sharpening), Lanczos supersampling, debanding, texture sharpness, HD textures, HD UI and fonts, HD cinematics,

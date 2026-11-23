@@ -1743,6 +1743,38 @@ void xrc_close_requested(void) {
 #endif
 }
 
+#ifdef _WIN32
+/* hires1: per-monitor DPI awareness (v2) before any window exists, so Windows does not virtualize the desktop (150% scaling
+ * made a 4K monitor look 2560x1440 and bitmap-stretched the window). XRC_DPI_AWARE=0 skips it. Then, unless XRC_WIDTH and XRC_HEIGHT
+ * are set or XRC_BB_NATIVE=0, the primary monitor's physical size becomes the display the game is told about
+ * (hle_d3d9.c / hle_user32.c read XRC_WIDTH / XRC_HEIGHT), so it makes a back buffer of that size, not 1280x720. */
+static void hires_init(void) {
+	const char *dp = getenv("XRC_DPI_AWARE"), *nat = getenv("XRC_BB_NATIVE");
+	if (!dp || strcmp(dp, "0")) {
+		typedef BOOL (WINAPI *SetCtx)(HANDLE);
+		SetCtx f = (SetCtx)(void *)GetProcAddress(GetModuleHandleA("user32.dll"), "SetProcessDpiAwarenessContext");
+		BOOL ok = f ? f((HANDLE)-4) : FALSE; /* DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 */
+		if (!ok) { /* (before Win10 1703, or already set by a manifest / compat layer: the older call) */
+			typedef BOOL (WINAPI *Old)(void);
+			Old g = (Old)(void *)GetProcAddress(GetModuleHandleA("user32.dll"), "SetProcessDPIAware");
+			if (g) g();
+		}
+		fprintf(stderr, "xrc: dpi awareness: %s\n", ok ? "per-monitor v2" : "older call / already set");
+	}
+	if (!(nat && !strcmp(nat, "0")) && !(getenv("XRC_WIDTH") && getenv("XRC_HEIGHT"))) {
+		POINT o = {0, 0};
+		MONITORINFO mi;
+		memset(&mi, 0, sizeof mi); mi.cbSize = sizeof mi;
+		if (GetMonitorInfoA(MonitorFromPoint(o, MONITOR_DEFAULTTOPRIMARY), &mi) && mi.rcMonitor.right > mi.rcMonitor.left) {
+			char w[16], h[16];
+			snprintf(w, sizeof w, "%ld", (long)(mi.rcMonitor.right - mi.rcMonitor.left));
+			snprintf(h, sizeof h, "%ld", (long)(mi.rcMonitor.bottom - mi.rcMonitor.top));
+			_putenv_s("XRC_WIDTH", w); _putenv_s("XRC_HEIGHT", h);
+			fprintf(stderr, "xrc: native display %sx%s (the back buffer's size; XRC_BB_NATIVE=0 for 1280x720)\n", w, h);
+		}
+	}
+}
+#endif
 /* ------------------------------------------------------------------------------------------------ entry */
 #ifdef _WIN32
 /* Ctrl-C / Ctrl-Break / the console closing (a timeout from WSL): end now. The default handler's ExitProcess can hang
@@ -1830,6 +1862,9 @@ int main(int argc, char **argv) {
 	SetConsoleCtrlHandler(on_console, TRUE);
 #endif
 	load_cfg();
+#ifdef _WIN32
+	hires_init();
+#endif
 #if defined(XRC_LR) && defined(_WIN32)
 	if (argc > 2 && !strcmp(argv[1], "--convert-movies")) return host_movie_convert_all_lr(argv[2]); /* (the launcher's Prepare movies) */
 #endif

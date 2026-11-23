@@ -364,11 +364,18 @@ static void d_GetAdapterIdentifier(XCtx *c) {
 	RET(D3D_OK, 4);
 }
 static int display_format(u32 f) { return f == 22 || f == 23; } /* X8R8G8B8, R5G6B5 */
-static void d_GetAdapterModeCount(XCtx *c) { RET(display_format(A(2)) ? NMODES : 0, 3); }
+/* hires1: the desktop's (native) size is the last mode, when it is not one of the fixed ones */
+static int native_extra(void) {
+	int k;
+	for (k = 0; k < NMODES; k++) if ((int)modes[k][0] == disp_w() && (int)modes[k][1] == disp_h()) return 0;
+	return 1;
+}
+static void d_GetAdapterModeCount(XCtx *c) { RET(display_format(A(2)) ? NMODES + native_extra() : 0, 3); }
 static void put_mode(u32 p, u32 w, u32 h, u32 f) { M32(p) = w; M32(p + 4) = h; M32(p + 8) = 60; M32(p + 12) = f; }
 static void d_EnumAdapterModes(XCtx *c) {
-	if (!display_format(A(2)) || A(3) >= NMODES) RET(D3DERR_INVALIDCALL, 5);
-	put_mode(A(4), modes[A(3)][0], modes[A(3)][1], A(2));
+	if (!display_format(A(2)) || A(3) >= NMODES + native_extra()) RET(D3DERR_INVALIDCALL, 5);
+	if (A(3) == NMODES) put_mode(A(4), (u32)disp_w(), (u32)disp_h(), A(2));
+	else put_mode(A(4), modes[A(3)][0], modes[A(3)][1], A(2));
 	RET(D3D_OK, 5);
 }
 static void d_GetAdapterDisplayMode(XCtx *c) { put_mode(A(2), (u32)disp_w(), (u32)disp_h(), 22); RET(D3D_OK, 3); }

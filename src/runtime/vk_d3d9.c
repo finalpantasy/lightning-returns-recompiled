@@ -290,6 +290,19 @@ int xrc_menu_is_open(void);
 #define OWN_WM_BORDERLESS (WM_APP + 7)
 static volatile int own_fs;
 static DWORD own_style;
+/* hires1: the windowed size (the back buffer's, now the monitor's) never exceeds the monitor's work area: scaled down, aspect kept */
+static void own_fit_work(int *w, int *h) {
+	MONITORINFO mi;
+	POINT o = {0, 0};
+	int aw, ah;
+	memset(&mi, 0, sizeof mi); mi.cbSize = sizeof mi;
+	if (!GetMonitorInfoA(MonitorFromPoint(o, MONITOR_DEFAULTTOPRIMARY), &mi)) return;
+	aw = (mi.rcWork.right - mi.rcWork.left) * 9 / 10; ah = (mi.rcWork.bottom - mi.rcWork.top) * 9 / 10;
+	if (*w > aw || *h > ah) {
+		double s = (double)aw / *w < (double)ah / *h ? (double)aw / *w : (double)ah / *h;
+		*w = (int)(*w * s); *h = (int)(*h * s);
+	}
+}
 static void own_set_fs(HWND h, int on) {
 	MONITORINFO mi;
 	RECT r;
@@ -305,6 +318,7 @@ static void own_set_fs(HWND h, int on) {
 	} else {
 		own_fs = 0;
 		r.left = r.top = 0; r.right = own_w; r.bottom = own_h;
+		own_fit_work((int *)&r.right, (int *)&r.bottom);
 		AdjustWindowRect(&r, own_style, FALSE);
 		SetWindowLongA(h, GWL_STYLE, (LONG)(own_style | WS_VISIBLE));
 		SetWindowPos(h, HWND_NOTOPMOST, 64, 64, r.right - r.left, r.bottom - r.top, SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
@@ -363,6 +377,7 @@ static DWORD WINAPI own_thread(LPVOID unused) {
 	WNDCLASSA wc;
 	RECT r = {0, 0, own_w, own_h};
 	MSG msg;
+	own_fit_work((int *)&r.right, (int *)&r.bottom);
 	DWORD st = WS_OVERLAPPEDWINDOW & ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
 	(void)unused;
 	memset(&wc, 0, sizeof wc);
@@ -397,6 +412,7 @@ static void plat_resize(int w, int h) {
 	RECT r = {0, 0, w, h};
 	own_w = w; own_h = h; /* (the windowed size to come back to) */
 	if (own_fs) return; /* (fullscreen: the window stays the monitor's size; the picture is scaled to it) */
+	own_fit_work((int *)&r.right, (int *)&r.bottom);
 	AdjustWindowRect(&r, (DWORD)GetWindowLongA((HWND)window, GWL_STYLE), FALSE);
 	SetWindowPos((HWND)window, 0, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_ASYNCWINDOWPOS);
 }
