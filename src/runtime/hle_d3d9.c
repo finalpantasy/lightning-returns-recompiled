@@ -850,8 +850,11 @@ static void v_GetStreamSourceFreq(XCtx *c) { M32(A(2)) = A(1) < 16 ? dev.freq[A(
 /* XRC_TRACE_BB: the first 300 draws / StretchRects into the back buffer, with the viewport and scissor (aspect bugs) */
 static int bb_trace(void) { static int t = -1, n; if (t < 0) t = getenv("XRC_TRACE_BB") != 0; return t && n++ < 300; }
 /* the draws: counted, surveyed (XRC_D3D_SURVEY), drawn by the backend */
+extern double xrc_pd_acc[40]; extern unsigned long long xrc_pd_cnt[40]; extern int xrc_pd_on;
+extern unsigned long long xrc_pd_now(void); extern void xrc_pd_add(int i, unsigned long long t0);
 static void draw(XCtx *c, int kind, int n) {
 	u32 a[8], k;
+	unsigned long long pdt = xrc_pd_on > 0 ? xrc_pd_now() : 0;
 	for (k = 0; k < (u32)n - 1 && k < 8; k++) a[k] = A(k + 1);
 	ndraws++;
 	if (dev.rt[0] == dev.backbuf && bb_trace())
@@ -869,6 +872,7 @@ static void draw(XCtx *c, int kind, int n) {
 	}
 	if (survey_dir()) survey_draw(kind, a[0]);
 	if (d3_be) d3_be->draw(kind, a);
+	if (pdt) xrc_pd_add(0, pdt);
 }
 static void v_DrawPrimitive(XCtx *c) { draw(c, 0, 4); RET(D3D_OK, 4); }
 static void v_DrawIndexedPrimitive(XCtx *c) { draw(c, 1, 7); RET(D3D_OK, 7); }
@@ -1674,6 +1678,19 @@ static void hle_Direct3DCreate9(XCtx *c) {
 	RET(OBJ(i).guest, 1);
 }
 static void hle_D3DPERF_BeginEvent(XCtx *c) { RET(0, 2); }
+static void p_SetTexture(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetTexture(c); if (t) xrc_pd_add(12, t); }
+static void p_SetRenderState(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetRenderState(c); if (t) xrc_pd_add(13, t); }
+static void p_SetSamplerState(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetSamplerState(c); if (t) xrc_pd_add(14, t); }
+static void p_SetVertexShaderConstantF(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetVertexShaderConstantF(c); if (t) xrc_pd_add(15, t); }
+static void p_SetPixelShaderConstantF(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetPixelShaderConstantF(c); if (t) xrc_pd_add(16, t); }
+static void p_SetStreamSource(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetStreamSource(c); if (t) xrc_pd_add(17, t); }
+static void p_SetIndices(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetIndices(c); if (t) xrc_pd_add(18, t); }
+static void p_SetVertexShader(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetVertexShader(c); if (t) xrc_pd_add(19, t); }
+static void p_SetPixelShader(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetPixelShader(c); if (t) xrc_pd_add(20, t); }
+static void p_SetVertexDeclaration(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetVertexDeclaration(c); if (t) xrc_pd_add(21, t); }
+static void p_SetViewport(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetViewport(c); if (t) xrc_pd_add(22, t); }
+static void p_SetScissorRect(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetScissorRect(c); if (t) xrc_pd_add(22, t); }
+static void p_SetRenderTarget(XCtx *c) { unsigned long long t = xrc_pd_on > 0 ? xrc_pd_now() : 0; v_SetRenderTarget(c); if (t) xrc_pd_add(22, t); }
 static void hle_D3DPERF_EndEvent(XCtx *c) { RET(0, 0); }
 
 /* ============================================================================================ the table
@@ -1739,16 +1756,16 @@ const XrcImport xrc_hle_d3d9[] = {
 	DV(GetCreationParameters), DV(GetNumberOfSwapChains), DV(GetSwapChain), DV(Reset), DV(Present), DV(GetBackBuffer),
 	DV(GetRasterStatus), DV(GetGammaRamp), DV(CreateTexture), DV(CreateVolumeTexture), DV(CreateCubeTexture),
 	DV(CreateVertexBuffer), DV(CreateIndexBuffer), DV(CreateRenderTarget), DV(CreateDepthStencilSurface),
-	DV(CreateOffscreenPlainSurface), DV(SetRenderTarget), DV(GetRenderTarget), DV(SetDepthStencilSurface),
-	DV(GetDepthStencilSurface), DV(SetTexture), DV(GetTexture), DV(SetStreamSource), DV(GetStreamSource),
-	DV(SetStreamSourceFreq), DV(GetStreamSourceFreq), DV(SetIndices), DV(GetIndices), DV(DrawPrimitiveUP), DV(DrawIndexedPrimitiveUP), DV(SetVertexDeclaration),
+	DV(CreateOffscreenPlainSurface), D("IDirect3DDevice9", SetRenderTarget, p_SetRenderTarget), DV(GetRenderTarget), DV(SetDepthStencilSurface),
+	DV(GetDepthStencilSurface), D("IDirect3DDevice9", SetTexture, p_SetTexture), DV(GetTexture), D("IDirect3DDevice9", SetStreamSource, p_SetStreamSource), DV(GetStreamSource),
+	DV(SetStreamSourceFreq), DV(GetStreamSourceFreq), D("IDirect3DDevice9", SetIndices, p_SetIndices), DV(GetIndices), DV(DrawPrimitiveUP), DV(DrawIndexedPrimitiveUP), D("IDirect3DDevice9", SetVertexDeclaration, p_SetVertexDeclaration),
 	DV(DrawPrimitive), DV(DrawIndexedPrimitive), DV(Clear), DV(StretchRect), DV(ColorFill), DV(GetRenderTargetData),
 	DV(UpdateSurface), DV(UpdateTexture),
-	DV(GetVertexDeclaration), DV(SetVertexShader), DV(GetVertexShader), DV(SetPixelShader), DV(GetPixelShader),
-	DV(SetFVF), DV(GetFVF), DV(SetRenderState), DV(GetRenderState), DV(SetSamplerState), DV(GetSamplerState),
-	DV(SetTextureStageState), DV(GetTextureStageState), DV(SetTransform), DV(GetTransform), DV(SetViewport),
-	DV(GetViewport), DV(SetScissorRect), DV(GetScissorRect), DV(SetVertexShaderConstantF),
-	DV(GetVertexShaderConstantF), DV(SetPixelShaderConstantF), DV(GetPixelShaderConstantF),
+	DV(GetVertexDeclaration), D("IDirect3DDevice9", SetVertexShader, p_SetVertexShader), DV(GetVertexShader), D("IDirect3DDevice9", SetPixelShader, p_SetPixelShader), DV(GetPixelShader),
+	DV(SetFVF), DV(GetFVF), D("IDirect3DDevice9", SetRenderState, p_SetRenderState), DV(GetRenderState), D("IDirect3DDevice9", SetSamplerState, p_SetSamplerState), DV(GetSamplerState),
+	DV(SetTextureStageState), DV(GetTextureStageState), DV(SetTransform), DV(GetTransform), D("IDirect3DDevice9", SetViewport, p_SetViewport),
+	DV(GetViewport), D("IDirect3DDevice9", SetScissorRect, p_SetScissorRect), DV(GetScissorRect), D("IDirect3DDevice9", SetVertexShaderConstantF, p_SetVertexShaderConstantF),
+	DV(GetVertexShaderConstantF), D("IDirect3DDevice9", SetPixelShaderConstantF, p_SetPixelShaderConstantF), DV(GetPixelShaderConstantF),
 	DV(SetVertexShaderConstantI), DV(GetVertexShaderConstantI), DV(SetPixelShaderConstantI),
 	DV(GetPixelShaderConstantI), DV(SetVertexShaderConstantB), DV(GetVertexShaderConstantB),
 	DV(SetPixelShaderConstantB), DV(GetPixelShaderConstantB), DV(GetSoftwareVertexProcessing), DV(GetNPatchMode),
