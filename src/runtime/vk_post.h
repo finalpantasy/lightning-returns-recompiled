@@ -39,7 +39,7 @@ int xrc_post_blit(VkCommandBuffer cb, VkImage simg, VkImageView sview, unsigned 
 
 /* live settings (the F10 menu); env defaults in brackets, read at the first frame:
  *   xrc_vk_set_downscale  0 bilinear (as before), 1 Lanczos                      [XRC_DOWNSCALE, default 0]
- *   xrc_vk_set_cas        0 off, else sharpness 0.0..1.0                         [XRC_CAS, default 0]
+ *   xrc_vk_set_cas        0 off, else sharpness 0.0..1.0                         [XRC_CAS, default 0.25]
  *   xrc_vk_set_deband     0 off, 1 dither only, 2 deband + dither                [XRC_DEBAND, default 0] */
 void xrc_vk_set_downscale(int m);
 void xrc_vk_set_cas(float s);

@@ -85,7 +85,7 @@ static const Opt opts[] = {
 	{"HD UI and fonts", "XRC_TEX_UI", 1, {"", "1"}, {"Off (original)", "On"},
 	 "Also uses the HD pack's versions of menus, fonts and logos. Needs HD textures on. Applies at once."},
 	/* (vk_post.c's passes: xrc_vk_set_cas / set_downscale / set_deband) */
-	{"Sharpening", "XRC_CAS", 1, {"", "0.25", "0.5", "0.75"}, {"Off", "Low 25% (recommended)", "Medium 50%", "High 75%"},
+	{"Sharpening", "XRC_CAS", 1, {"0", "0.25", "0.5", "0.75"}, {"Off", "Low 25% (recommended)", "Medium 50%", "High 75%"},
 	 "Contrast-adaptive sharpening (the AMD FidelityFX CAS method) on the final picture: soft detail gets crisper, edges that are already sharp are left alone. Low suits most screens. Costs a little GPU time. Applies at once."},
 	{"Supersampling filter", "XRC_DOWNSCALE", 1, {"0", "1"}, {"Standard (bilinear)", "High quality (Lanczos)"},
 	 "Used when the render resolution is higher than your screen. High quality counts every rendered pixel, so fine detail stays steady; Standard skips pixels and can shimmer. Applies at once."},
@@ -103,7 +103,7 @@ static const Opt opts[] = {
 #define ID_RESTART 0x7f00
 #define ID_QUIT 0x7f01
 
-static const char *def_val(const Opt *o) { return !strcmp(o->key, "XRC_MOVIE_HD") || !strcmp(o->key, "XRC_TEX_HD") ? "1" : !strcmp(o->key, "XRC_FXAA") ? "16" : !strcmp(o->key, "XRC_DOWNSCALE") ? "1" : !strcmp(o->key, "XRC_SHADOW_HOLD") ? "900" : ""; } /* (integ5: Lanczos and shadow stability default on; their Off is saved as 0) */ /* (integ3: SMAA is the default; Off is saved as 0) */
+static const char *def_val(const Opt *o) { return !strcmp(o->key, "XRC_MOVIE_HD") || !strcmp(o->key, "XRC_TEX_HD") ? "1" : !strcmp(o->key, "XRC_FXAA") ? "16" : !strcmp(o->key, "XRC_DOWNSCALE") ? "1" : !strcmp(o->key, "XRC_SHADOW_HOLD") ? "900" : !strcmp(o->key, "XRC_CAS") ? "0.25" : ""; } /* (integ5: Lanczos and shadow stability default on; their Off is saved as 0) */ /* (integ3: SMAA is the default; Off is saved as 0) */
 static const char *cur(const Opt *o) {
 	const char *v = getenv(o->key);
 	if (!v) v = def_val(o);

@@ -53,7 +53,7 @@ static void settings(void) {
 	static int ab_read;
 	if (!ab_read) { ab_read = 1; e = getenv("XRC_SHOT_AB"); if (e && !strcmp(e, "post")) bypass = 1; } /* (the A shots: off, from the start) */
 	if (set_down < 0) { e = getenv("XRC_DOWNSCALE"); set_down = e ? atoi(e) : 1; if (set_down < 0) set_down = 0; fprintf(stderr, "xrc: vulkan: supersampling filter %s (%s)\n", set_down ? "Lanczos" : "bilinear", e ? "set by the user" : "default"); } /* (integ5: Lanczos by default; the menu saves bilinear as 0) */
-	if (set_cas < 0.0f) { e = getenv("XRC_CAS"); xrc_vk_set_cas(e ? (float)atof(e) : 0.0f); }
+	if (set_cas < 0.0f) { e = getenv("XRC_CAS"); xrc_vk_set_cas(e ? (float)atof(e) : 0.25f); }
 	if (set_deband < 0) { e = getenv("XRC_DEBAND"); xrc_vk_set_deband(e ? atoi(e) : 0); }
 }
 
