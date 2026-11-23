@@ -1,5 +1,5 @@
 #!/bin/sh
-# Compiles the SMAA passes to SPIR-V as C arrays (smaa_spv.h). Needs glslang (A:\dev\toolchains\glslang).
+# Compiles the SMAA passes to SPIR-V as C arrays (smaa_spv.h). Needs glslang (set GLSLANG to its path).
 set -e
 cd "$(dirname "$0")"
 G="${GLSLANG:-glslang}"

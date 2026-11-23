@@ -1,5 +1,5 @@
 #!/bin/sh
-# Compiles vk_post.c's shaders to SPIR-V as C arrays (post_spv.h). Needs glslang (A:\dev\toolchains\glslang).
+# Compiles vk_post.c's shaders to SPIR-V as C arrays (post_spv.h). Needs glslang (set GLSLANG to its path).
 set -e
 cd "$(dirname "$0")"
 G="${GLSLANG:-glslang}"

@@ -66,20 +66,20 @@ static void hle_DrawMenuBar(XCtx *c) { RET(wnd(A(0)) != 0, 1); }
 static void hle_SetMenu(XCtx *c) { Wnd *w = wnd(A(0)); if (w) w->menu = A(1); RET(w != 0, 2); }
 static void hle_GetMenuItemCount(XCtx *c) { Menu *m = menu(A(0)); if (!m) set_err(1401 /* ERROR_INVALID_MENU_HANDLE */); RET(m ? (u32)m->n : 0xffffffffu, 1); }
 static void mii_set(MItem *it, u32 mii, int wide) {
-	u32 mask = M32(mii + 4);
-	if (mask & MIIM_STATE) it->state = M32(mii + 12);
-	if (mask & MIIM_ID) it->id = M32(mii + 16);
-	if (mask & MIIM_SUBMENU) it->sub = M32(mii + 20);
-	if (mask & MIIM_DATA) it->data = M32(mii + 32);
-	if (mask & MIIM_BITMAP) it->bmp = M32(mii + 44);
-	if (mask & (MIIM_TYPE | MIIM_FTYPE)) it->type = M32(mii + 8);
+	u32 mask = GF(MenuItemInfo, mii, mask);
+	if (mask & MIIM_STATE) it->state = GF(MenuItemInfo, mii, state);
+	if (mask & MIIM_ID) it->id = GF(MenuItemInfo, mii, id);
+	if (mask & MIIM_SUBMENU) it->sub = GF(MenuItemInfo, mii, sub_menu);
+	if (mask & MIIM_DATA) it->data = GF(MenuItemInfo, mii, item_data);
+	if (mask & MIIM_BITMAP) it->bmp = GF(MenuItemInfo, mii, bmp_item);
+	if (mask & (MIIM_TYPE | MIIM_FTYPE)) it->type = GF(MenuItemInfo, mii, type);
 	if (getenv("XRC_MENU_DUMP")) {
-		u32 s = M32(mii + 36);
-		fprintf(stderr, "xrc: mii %s mask %x type %x id %u text %08x cch %u: %04x %04x %04x %04x\n", wide ? "W" : "A", mask, M32(mii + 8),
-		        M32(mii + 16), s, M32(mii + 40), s ? M16(s) : 0, s ? M16(s + 2) : 0, s ? M16(s + 4) : 0, s ? M16(s + 6) : 0);
+		u32 s = GF(MenuItemInfo, mii, type_data);
+		fprintf(stderr, "xrc: mii %s mask %x type %x id %u text %08x cch %u: %04x %04x %04x %04x\n", wide ? "W" : "A", mask, GF(MenuItemInfo, mii, type),
+		        GF(MenuItemInfo, mii, id), s, GF(MenuItemInfo, mii, cch), s ? M16(s) : 0, s ? M16(s + 2) : 0, s ? M16(s + 4) : 0, s ? M16(s + 6) : 0);
 	}
 	if ((mask & MIIM_STRING) || ((mask & MIIM_TYPE) && !(it->type & 0x804u /* MFT_BITMAP | MFT_SEPARATOR */))) {
-		u32 s = M32(mii + 36);
+		u32 s = GF(MenuItemInfo, mii, type_data);
 		size_t k = 0;
 		if (s) for (; k + 1 < sizeof it->text && (wide ? M16(s + 2u * (u32)k) : M8(s + (u32)k)); k++)
 			it->text[k] = (char)(wide ? M16(s + 2u * (u32)k) : M8(s + (u32)k));
@@ -89,21 +89,21 @@ static void mii_set(MItem *it, u32 mii, int wide) {
 /* GetMenuItemInfoA(menu, item, by_position, MENUITEMINFOA *) */
 static void hle_GetMenuItemInfoA(XCtx *c) {
 	Menu *m = 0;
-	u32 mii = A(3), mask = M32(mii + 4);
+	u32 mii = A(3), mask = GF(MenuItemInfo, mii, mask);
 	int k = menu_item(A(0), A(1), A(2) != 0, &m);
 	MItem *it;
 	if (k < 0) { set_err(1456); RET(0, 4); }
 	it = &m->it[k];
-	if (mask & MIIM_STATE) M32(mii + 12) = it->state;
-	if (mask & MIIM_ID) M32(mii + 16) = it->id;
-	if (mask & MIIM_SUBMENU) M32(mii + 20) = it->sub;
-	if (mask & MIIM_DATA) M32(mii + 32) = it->data;
-	if (mask & MIIM_BITMAP) M32(mii + 44) = it->bmp;
-	if (mask & (MIIM_TYPE | MIIM_FTYPE)) M32(mii + 8) = it->type;
+	if (mask & MIIM_STATE) GF(MenuItemInfo, mii, state) = it->state;
+	if (mask & MIIM_ID) GF(MenuItemInfo, mii, id) = it->id;
+	if (mask & MIIM_SUBMENU) GF(MenuItemInfo, mii, sub_menu) = it->sub;
+	if (mask & MIIM_DATA) GF(MenuItemInfo, mii, item_data) = it->data;
+	if (mask & MIIM_BITMAP) GF(MenuItemInfo, mii, bmp_item) = it->bmp;
+	if (mask & (MIIM_TYPE | MIIM_FTYPE)) GF(MenuItemInfo, mii, type) = it->type;
 	if (mask & (MIIM_STRING | MIIM_TYPE)) {
-		u32 s = M32(mii + 36), cap = M32(mii + 40), n = (u32)strlen(it->text);
+		u32 s = GF(MenuItemInfo, mii, type_data), cap = GF(MenuItemInfo, mii, cch), n = (u32)strlen(it->text);
 		if (s && cap) { u32 w = n < cap - 1 ? n : cap - 1; memcpy(xrc_mem + s, it->text, w); M8(s + w) = 0; }
-		M32(mii + 40) = n;
+		GF(MenuItemInfo, mii, cch) = n;
 	}
 	RET(1, 4);
 }
@@ -325,7 +325,7 @@ static void hle_KillTimer(XCtx *c) {
 static void hle_GetMessageA(XCtx *c) {
 	u32 p = A(0), h = A(1), lo = A(2), hi = A(3);
 	for (;;) {
-		if (peek(c, p, h, lo, hi, 1)) RET(M32(p + 4) != WM_QUIT, 4);
+		if (peek(c, p, h, lo, hi, 1)) RET(GF(WinMsg, p, message) != WM_QUIT, 4);
 		xrc_sleep(1);
 	}
 }

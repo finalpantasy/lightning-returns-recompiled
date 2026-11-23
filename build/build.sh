@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds lr.exe (the "integ5" feature set) from this repo plus the translator's output for YOUR copy of the game.
+# Builds lr.exe (the "integ6" feature set) from this repo plus the translator's output for YOUR copy of the game.
 # Nothing game-derived is in this repo: the pages (page_*.c) and xrc_table.c are generated from your own exe.
 #
 #   LR_GEN=<dir>        translator output: <dir>/src/page_*.c and <dir>/xrc_table.c        (required)
