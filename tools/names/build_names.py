@@ -390,6 +390,18 @@ names_dataref.run(dict(names=names, put=put, funcs=funcs, dataref=dataref, RANK=
 import names_five
 names_five.run(dict(names=names, put=put, funcs=funcs, F=F, callees=callees, callers=callers, nins=nins, fimps=fimps, fstrs=fstrs))
 
+import names_six
+names_six.run(dict(names=names, put=put, funcs=funcs, F=F, callees=callees, callers=callers, nins=nins, fimps=fimps, fstrs=fstrs,
+                   dataref=dataref, vtables=vtables, img=img, BASE=BASE, sections=sections, RANK=RANK, fset=fset, imports=imports))
+
+import names_seven
+names_seven.run(dict(names=names, put=put, funcs=funcs, F=F, callees=callees, callers=callers, nins=nins, fimps=fimps, fstrs=fstrs,
+                     dataref=dataref, vtables=vtables, img=img, BASE=BASE, sections=sections, RANK=RANK, fset=fset, imports=imports))
+
+import names_eight
+names_eight.run(dict(names=names, put=put, funcs=funcs, F=F, callees=callees, callers=callers, nins=nins, fimps=fimps, fstrs=fstrs,
+                     dataref=dataref, vtables=vtables, img=img, BASE=BASE, sections=sections, RANK=RANK, fset=fset, imports=imports))
+
 # ------------------------------------------------------------------ write
 def clean(n):
     return re.sub(r'[\t\r\n]', ' ', n)
@@ -407,10 +419,11 @@ with open(XREF, 'w', encoding='utf-8', newline='\n') as fh:
         fh.write('%08x\t%d\t%d\t%s\t%s\t%s\n' % (f, nins.get(f, 0), len(callers.get(f, ())),
                  ','.join('%x' % c for c in sorted(callees.get(f, ()))[:12]),
                  ','.join(sorted(set(fimps.get(f, []))))[:200], ss))
-os.makedirs(ROOT + '/build/win', exist_ok=True)
-shutil.copyfile(OUT, ROOT + '/build/win/names.tsv')
+if not os.environ.get('NAMES_NO_COPY'):
+    os.makedirs(ROOT + '/build/win', exist_ok=True)
+    shutil.copyfile(OUT, ROOT + '/build/win/names.tsv')
 by = collections.Counter(v[1] for v in names.values())
 print('named %d of %d functions:' % (len(names), len(funcs)), dict(by.most_common()), file=sys.stderr)
-pickle.dump({'callees': dict(callees), 'callers': dict(callers), 'fimps': dict(fimps), 'fstrs': dict(fstrs),
+if not os.environ.get('NAMES_NO_COPY'): pickle.dump({'callees': dict(callees), 'callers': dict(callers), 'fimps': dict(fimps), 'fstrs': dict(fstrs),
              'vtables': vtables, 'names': names, 'nins': nins, 'file_of': file_of, 'imports': imports},
             open(ROOT + '/build/names_facts.pickle', 'wb'), protocol=4)

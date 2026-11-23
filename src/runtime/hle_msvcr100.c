@@ -19,6 +19,7 @@
 #include <string.h>
 #include <time.h>
 #include "xrc_rt.h"
+#include "guest_types.h"
 
 #define A(i) xrc_arg(c, (i))
 #define S(a) ((char *)(xrc_mem + (u32)(a)))
@@ -331,15 +332,15 @@ static void iob_init(void) {
 		streams[i].std = i == 0 ? stdin : i == 1 ? stdout : stderr;
 		streams[i].used = 1;
 		streams[i].text = 1;
-		M32(streams[i].guest + 16) = (u32)i;  /* _file */
-		M32(streams[i].guest + 28) = (u32)i;  /* stream index */
+		GF(CrtFile, streams[i].guest, file_no) = (s32)i;  /* _file */
+		GF(CrtFile, streams[i].guest, stream_index) = (u32)i;  /* stream index */
 	}
 }
 static Stream *stream_of(XCtx *c, u32 f) {
 	u32 i;
 	iob_init();
 	if (!f) xrc_fatal(c, "msvcr100: NULL FILE*");
-	i = M32(f + 28);
+	i = GF(CrtFile, f, stream_index);
 	if (i >= NFILE || !streams[i].used || streams[i].guest != f) xrc_fatal(c, "msvcr100: %08x is not an open FILE", f);
 	return &streams[i];
 }
@@ -433,7 +434,7 @@ static u32 open_stream(XCtx *c, u32 name, const char *mode) {
 	memset(&streams[i], 0, sizeof streams[i]);
 	streams[i].guest = gf; streams[i].h = h; streams[i].used = 1;
 	streams[i].text = text; streams[i].append = mode[0] == 'a';
-	M32(gf + 16) = i; M32(gf + 28) = i;
+	GF(CrtFile, gf, file_no) = i; GF(CrtFile, gf, stream_index) = i;
 	return gf;
 }
 static void hle_fopen(XCtx *c) { CRET(open_stream(c, A(0), S(A(1)))); }
@@ -508,7 +509,7 @@ static Stream *stream_of_fd(XCtx *c, u32 fd) {
 	(void)c;
 	return &streams[fd];
 }
-static void hle__fileno(XCtx *c) { CRET(M32(stream_of(c, A(0))->guest + 16)); }
+static void hle__fileno(XCtx *c) { CRET(GF(CrtFile, stream_of(c, A(0))->guest, file_no)); }
 static void hle__filelength(XCtx *c) {
 	Stream *s = stream_of_fd(c, A(0));
 	u32 cur, end;
@@ -914,12 +915,12 @@ static u64 ft_time64(u32 ft) {
 	return t >= 116444736000000000ull ? (t - 116444736000000000ull) / 10000000ull : 0;
 }
 static void find_copy(u32 w, u32 fd) {
-	M32(fd) = M32(w);
+	GF(CrtFindData64i32, fd, attrib) = GF(Win32FindData, w, file_attributes);
 	M32(fd + 4) = 0;
-	M64(fd + 8) = ft_time64(w + 4);
-	M64(fd + 16) = ft_time64(w + 12);
-	M64(fd + 24) = ft_time64(w + 20);
-	M32(fd + 32) = M32(w + 32);
+	GF(CrtFindData64i32, fd, time_create) = ft_time64(w + 4);
+	GF(CrtFindData64i32, fd, time_access) = ft_time64(w + 12);
+	GF(CrtFindData64i32, fd, time_write) = ft_time64(w + 20);
+	GF(CrtFindData64i32, fd, size) = GF(Win32FindData, w, file_size_low);
 	memcpy(xrc_mem + fd + 36, xrc_mem + w + 44, 260);
 }
 static void hle__findfirst64i32(XCtx *c) {
@@ -1073,11 +1074,11 @@ static void hle_limits_float_nan(XCtx *c) { CRETF(f64_of(0x7ff8000000000000ull))
 /* std::exception {vfptr, const char *_Mywhat, bool _Mydofree}; its vtable: scalar deleting destructor, what */
 static u32 exc_vtable;
 static void exc_set_what(u32 self, u32 s) {
-	M32(self + 4) = 0; M8(self + 8) = 0;
+	GF(StdException, self, what) = 0; GF(StdException, self, do_free) = 0;
 	if (s) {
 		u32 n = (u32)strlen(S(s)) + 1, p = xrc_heap_alloc(n, 0);
 		memcpy(S(p), S(s), n);
-		M32(self + 4) = p; M8(self + 8) = 1;
+		GF(StdException, self, what) = p; GF(StdException, self, do_free) = 1;
 	}
 }
 static void exc_init(u32 self) {
@@ -1086,20 +1087,20 @@ static void exc_init(u32 self) {
 		M32(exc_vtable) = xrc_import_addr("MSVCR100.dll", "??_Gexception@std@@UAEPAXI@Z");
 		M32(exc_vtable + 4) = xrc_import_addr("MSVCR100.dll", "?what@exception@std@@UBEPBDXZ");
 	}
-	M32(self) = exc_vtable;
+	GF(StdException, self, vfptr) = exc_vtable;
 }
-static void exc_free(u32 self) { if (M8(self + 8) && M32(self + 4)) xrc_heap_free(M32(self + 4)); M32(self + 4) = 0; M8(self + 8) = 0; }
+static void exc_free(u32 self) { if (GF(StdException, self, do_free) && GF(StdException, self, what)) xrc_heap_free(GF(StdException, self, what)); GF(StdException, self, what) = 0; GF(StdException, self, do_free) = 0; }
 /* exception(const char *const &) */
 static void hle_exc_ctor_str(XCtx *c) { exc_init(c->ecx); exc_set_what(c->ecx, M32(A(0))); TRET(c->ecx, 1); }
 /* exception(const exception &) */
 static void hle_exc_ctor_copy(XCtx *c) {
 	u32 o = A(0);
 	exc_init(c->ecx);
-	if (M8(o + 8)) exc_set_what(c->ecx, M32(o + 4));
-	else { M32(c->ecx + 4) = M32(o + 4); M8(c->ecx + 8) = 0; }
+	if (GF(StdException, o, do_free)) exc_set_what(c->ecx, GF(StdException, o, what));
+	else { GF(StdException, c->ecx, what) = GF(StdException, o, what); GF(StdException, c->ecx, do_free) = 0; }
 	TRET(c->ecx, 1);
 }
-static void hle_exc_dtor(XCtx *c) { M32(c->ecx) = exc_vtable; exc_free(c->ecx); TRET(0, 0); }
+static void hle_exc_dtor(XCtx *c) { GF(StdException, c->ecx, vfptr) = exc_vtable; exc_free(c->ecx); TRET(0, 0); }
 static void hle_exc_sdtor(XCtx *c) {
 	u32 self = c->ecx;
 	exc_free(self);
@@ -1108,7 +1109,7 @@ static void hle_exc_sdtor(XCtx *c) {
 }
 static u32 unknown_exc;
 static void hle_exc_what(XCtx *c) {
-	if (M32(c->ecx + 4)) TRET(M32(c->ecx + 4), 0);
+	if (GF(StdException, c->ecx, what)) TRET(GF(StdException, c->ecx, what), 0);
 	if (!unknown_exc) { unknown_exc = xrc_heap_alloc(18, 0); memcpy(S(unknown_exc), "Unknown exception", 18); }
 	TRET(unknown_exc, 0);
 }
