@@ -50,8 +50,11 @@ static void set_err(u32 e) { GF(Teb, xrc_teb, last_error) = e; }
 #define WS_VISIBLE 0x10000000u
 #define WS_CHILD 0x40000000u
 
-static int disp_w(void) { const char *e = getenv("XRC_WIDTH"); return e && atoi(e) > 0 ? atoi(e) : 1280; }
-static int disp_h(void) { const char *e = getenv("XRC_HEIGHT"); return e && atoi(e) > 0 ? atoi(e) : 720; }
+/* hires2: the display is asked of xrc_rt.c (the monitor / window the game is on, physical pixels) */
+void xrc_disp_size(int *w, int *h);
+int xrc_mode_list(int idx, int *w, int *h);
+static int disp_w(void) { int w = 0, h = 0; xrc_disp_size(&w, &h); return w; }
+static int disp_h(void) { int w = 0, h = 0; xrc_disp_size(&w, &h); return h; }
 static int trace_msgs = -1;
 static int tracing(void) {
 	if (trace_msgs < 0) trace_msgs = xrc_tool_env("XRC_TRACE_MSGS") != 0;
@@ -519,8 +522,9 @@ static void fill_devmode(u32 d, int w, int h) {
 static void hle_EnumDisplaySettingsA(XCtx *c) {
 	u32 i = A(1);
 	if (i == 0xffffffffu || i == 0xfffffffeu) { fill_devmode(A(2), disp_w(), disp_h()); RET(1, 3); }
-	if (i >= (u32)NMODES) RET(0, 3);
-	fill_devmode(A(2), modes[i][0], modes[i][1]);
+	{ int mw = 0, mh = 0; /* (hires2: the modes that fit the monitor, its own, and the game's display) */
+	  if (!xrc_mode_list((int)i, &mw, &mh)) RET(0, 3);
+	  fill_devmode(A(2), mw, mh); }
 	RET(1, 3);
 }
 static void hle_ChangeDisplaySettingsExA(XCtx *c) { RET(0 /* DISP_CHANGE_SUCCESSFUL */, 5); }

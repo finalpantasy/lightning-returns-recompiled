@@ -65,6 +65,7 @@
 #include <vulkan/vulkan_core.h>
 #include "hle_d3d9.h"
 #include "vk_sm3.h"
+#include "xrc_disp.h" /* (hires2: the monitor / display the game is told about) */
 #include "vk_post.h" /* (the last passes: Lanczos rescale, sharpening, deband -- post_blit) */
 void xrc_vk_tex_cycle(void);
 void xrc_vk_mesh_request(void); /* (F7: the mesh dump) */
@@ -288,44 +289,110 @@ int xrc_menu_is_open(void);
  * its monitor without a frame, the desktop's mode kept; the picture is scaled to fit (aspect kept). F11 or Alt+Enter
  * toggles it; the settings menu sets it (xrc_vk_set_borderless). Only the window's thread changes it. */
 #define OWN_WM_BORDERLESS (WM_APP + 7)
+#ifndef WM_DPICHANGED
+#define WM_DPICHANGED 0x02E0
+#endif
 static volatile int own_fs;
 static DWORD own_style;
-/* hires1: the windowed size (the back buffer's, now the monitor's) never exceeds the monitor's work area: scaled down, aspect kept */
-static void own_fit_work(int *w, int *h) {
-	MONITORINFO mi;
-	POINT o = {0, 0};
-	int aw, ah;
-	memset(&mi, 0, sizeof mi); mi.cbSize = sizeof mi;
-	if (!GetMonitorInfoA(MonitorFromPoint(o, MONITOR_DEFAULTTOPRIMARY), &mi)) return;
-	aw = (mi.rcWork.right - mi.rcWork.left) * 9 / 10; ah = (mi.rcWork.bottom - mi.rcWork.top) * 9 / 10;
-	if (*w > aw || *h > ah) {
-		double s = (double)aw / *w < (double)ah / *h ? (double)aw / *w : (double)ah / *h;
-		*w = (int)(*w * s); *h = (int)(*h * s);
+/* hires2: the windowed client size (physical pixels) and position to come back to; the window's dpi. */
+static int win_cw, win_ch, win_x = 0x7fffffff, win_y, own_dpi = 96;
+static void own_outer(DWORD style, int dpi, int cw, int ch, RECT *r) { /* the window rectangle for a client of cw x ch at dpi */
+	typedef BOOL (WINAPI *AdjF)(LPRECT, DWORD, BOOL, DWORD, UINT);
+	static AdjF f;
+	static int tried;
+	if (!tried) { f = (AdjF)(void *)GetProcAddress(GetModuleHandleA("user32.dll"), "AdjustWindowRectExForDpi"); tried = 1; }
+	r->left = r->top = 0; r->right = cw; r->bottom = ch;
+	if (!(f && f(r, style, FALSE, 0, (UINT)dpi))) AdjustWindowRect(r, style, FALSE);
+}
+/* the client size cw x ch, shrunk (aspect kept) until the window with its frame fits the monitor's work area */
+static void own_fit(const XrcMon *m, DWORD style, int *cw, int *ch) {
+	RECT r;
+	int aw = m->ww > 0 ? m->ww : m->w, ah = m->wh > 0 ? m->wh : m->h;
+	own_outer(style, m->dpi, *cw, *ch, &r);
+	if (r.right - r.left > aw || r.bottom - r.top > ah) {
+		int fw = (r.right - r.left) - *cw, fh = (r.bottom - r.top) - *ch;
+		double s1 = (double)(aw - fw) / *cw, s2 = (double)(ah - fh) / *ch, sc = s1 < s2 ? s1 : s2;
+		if (sc < 0.1) sc = 0.1;
+		*cw = (int)(*cw * sc) & ~1; *ch = (int)(*ch * sc) & ~1;
 	}
+}
+/* borderless fullscreen: the window covers the monitor it is on (physical pixels); the display the game is told follows it */
+static void own_refit(HWND h) {
+	XrcMon m;
+	RECT r;
+	if (!own_fs || !h) return;
+	xrc_mon_get(h, &m);
+	GetWindowRect(h, &r);
+	if (r.left != m.x || r.top != m.y || r.right - r.left != m.w || r.bottom - r.top != m.h)
+		SetWindowPos(h, HWND_TOP, m.x, m.y, m.w, m.h, SWP_NOOWNERZORDER | SWP_NOACTIVATE);
 }
 static void own_set_fs(HWND h, int on) {
-	MONITORINFO mi;
+	XrcMon m;
 	RECT r;
+	int cw, ch;
 	if (!h || on == own_fs) return;
+	xrc_mon_get(h, &m);
 	if (on) {
-		memset(&mi, 0, sizeof mi);
-		mi.cbSize = sizeof mi;
-		if (!GetMonitorInfoA(MonitorFromWindow(h, MONITOR_DEFAULTTOPRIMARY), &mi)) return;
-		own_fs = 1;
+		if (GetClientRect(h, &r) && r.right - r.left >= 64) { win_cw = r.right - r.left; win_ch = r.bottom - r.top; }
+		GetWindowRect(h, &r); win_x = r.left; win_y = r.top;
+		own_fs = 1; xrc_disp_fs = 1;
 		SetWindowLongA(h, GWL_STYLE, (LONG)(WS_POPUP | WS_VISIBLE));
-		SetWindowPos(h, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
-		             mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+		SetWindowPos(h, HWND_TOP, m.x, m.y, m.w, m.h, SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
 	} else {
-		own_fs = 0;
-		r.left = r.top = 0; r.right = own_w; r.bottom = own_h;
-		own_fit_work((int *)&r.right, (int *)&r.bottom);
-		AdjustWindowRect(&r, own_style, FALSE);
+		int ow, oh, x, y;
+		own_fs = 0; xrc_disp_fs = 0;
+		cw = win_cw; ch = win_ch;
+		if (cw < 64 || ch < 64) xrc_default_client(&m, &cw, &ch);
+		own_fit(&m, own_style, &cw, &ch);
+		own_outer(own_style, m.dpi, cw, ch, &r);
+		ow = r.right - r.left; oh = r.bottom - r.top;
+		x = m.wx + (m.ww - ow) / 2; y = m.wy + (m.wh - oh) / 2;
+		if (win_x != 0x7fffffff && win_x >= m.wx && win_y >= m.wy && win_x + ow <= m.wx + m.ww && win_y + oh <= m.wy + m.wh) { x = win_x; y = win_y; }
+		if (x < m.wx) x = m.wx;
+		if (y < m.wy) y = m.wy;
 		SetWindowLongA(h, GWL_STYLE, (LONG)(own_style | WS_VISIBLE));
-		SetWindowPos(h, HWND_NOTOPMOST, 64, 64, r.right - r.left, r.bottom - r.top, SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+		SetWindowPos(h, HWND_NOTOPMOST, x, y, ow, oh, SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
 	}
-	fprintf(stderr, "xrc: vulkan: window %s\n", on ? "borderless fullscreen" : "windowed");
+	InterlockedIncrement((volatile LONG *)&xrc_disp_gen);
+	GetClientRect(h, &r);
+	fprintf(stderr, "xrc: vulkan: window %s (client %ldx%ld on the %dx%d monitor, dpi %d)\n", on ? "borderless fullscreen" : "windowed", (long)(r.right - r.left),
+	        (long)(r.bottom - r.top), m.w, m.h, m.dpi);
 }
 void xrc_vk_set_borderless(int on) { if (window) PostMessageA((HWND)window, OWN_WM_BORDERLESS, (WPARAM)(on != 0), 0); }
+/* a test (XRC_TEST_SEQ="secs:toggle,secs:fake=WxH@dpi,..."): F11 at that time, or the window moves to another monitor / dpi
+ * (XRC_FAKE_MONITOR changes, and WM_DPICHANGED / WM_DISPLAYCHANGE arrive as Windows sends them) */
+static DWORD WINAPI own_test_thread(LPVOID arg) {
+	char *q = (char *)arg, *tok;
+	DWORD t0 = GetTickCount();
+	for (tok = strtok(q, ","); tok; tok = strtok(0, ",")) {
+		int secs = atoi(tok);
+		char *act = strchr(tok, ':');
+		DWORD el = GetTickCount() - t0;
+		if (!act) continue;
+		act++;
+		if ((DWORD)secs * 1000u > el) Sleep((DWORD)secs * 1000u - el);
+		if (!window) continue;
+		if (!strcmp(act, "toggle")) {
+			fprintf(stderr, "xrc: test: F11 (toggle)\n");
+			PostMessageA((HWND)window, OWN_WM_BORDERLESS, (WPARAM)!own_fs, 0);
+		} else if (!strncmp(act, "fake=", 5)) {
+			int fw, fh, fd = 96;
+			if (sscanf(act + 5, "%dx%d@%d", &fw, &fh, &fd) >= 2) {
+				RECT r;
+				fprintf(stderr, "xrc: test: the window moves to a %dx%d monitor at dpi %d\n", fw, fh, fd);
+				_putenv_s("XRC_FAKE_MONITOR", act + 5);
+				GetWindowRect((HWND)window, &r);
+				if (!own_fs) { /* (windowed: as Windows scales it for the new dpi) */
+					RECT sr;
+					sr.left = r.left; sr.top = r.top; sr.right = r.left + (r.right - r.left) * fd / own_dpi; sr.bottom = r.top + (r.bottom - r.top) * fd / own_dpi;
+					SendMessageA((HWND)window, WM_DPICHANGED, (WPARAM)(fd | (fd << 16)), (LPARAM)&sr);
+				} else SendMessageA((HWND)window, WM_DPICHANGED, (WPARAM)(fd | (fd << 16)), (LPARAM)&r);
+				PostMessageA((HWND)window, WM_DISPLAYCHANGE, 32, MAKELPARAM(fw, fh));
+			}
+		}
+	}
+	return 0;
+}
 static LRESULT CALLBACK own_proc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
 	if (m == OWN_WM_BORDERLESS) { own_set_fs(h, (int)wp); return 0; }
 	if ((m == WM_KEYDOWN || m == WM_SYSKEYDOWN || m == WM_KEYUP || m == WM_SYSKEYUP) &&
@@ -364,6 +431,21 @@ static LRESULT CALLBACK own_proc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
 		xrc_exit_now(0);
 		return 0;
 	case WM_KILLFOCUS: xrc_input_release_all(); break;
+	case WM_DPICHANGED: { /* another monitor / dpi: windowed takes Windows' suggested rectangle (the same logical size), fullscreen covers the new monitor */
+		RECT *sr = (RECT *)lp;
+		own_dpi = (int)LOWORD(wp);
+		if (!own_fs && sr) SetWindowPos(h, 0, sr->left, sr->top, sr->right - sr->left, sr->bottom - sr->top, SWP_NOZORDER | SWP_NOACTIVATE);
+		else own_refit(h);
+		InterlockedIncrement((volatile LONG *)&xrc_disp_gen);
+		fprintf(stderr, "xrc: vulkan: dpi changed to %d (%d%%)\n", own_dpi, own_dpi * 100 / 96);
+		return 0;
+	}
+	case WM_DISPLAYCHANGE: own_refit(h); InterlockedIncrement((volatile LONG *)&xrc_disp_gen); break;
+	case WM_MOVE: own_refit(h); InterlockedIncrement((volatile LONG *)&xrc_disp_gen); break;
+	case WM_SIZE:
+		if (!own_fs && wp != SIZE_MINIMIZED && LOWORD(lp) >= 64 && HIWORD(lp) >= 64) { win_cw = LOWORD(lp); win_ch = HIWORD(lp); }
+		InterlockedIncrement((volatile LONG *)&xrc_disp_gen);
+		break;
 	case WM_KEYDOWN: case WM_SYSKEYDOWN: case WM_KEYUP: case WM_SYSKEYUP:
 		if (wp == VK_F4 && (GetKeyState(VK_MENU) & 0x8000)) break; /* Alt+F4: closes (WM_CLOSE) */
 		if ((m == WM_KEYDOWN || m == WM_SYSKEYDOWN) && (lp & (1 << 30))) return 0; /* (auto-repeat: still down) */
@@ -375,11 +457,24 @@ static LRESULT CALLBACK own_proc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
 }
 static DWORD WINAPI own_thread(LPVOID unused) {
 	WNDCLASSA wc;
-	RECT r = {0, 0, own_w, own_h};
+	RECT r;
 	MSG msg;
-	own_fit_work((int *)&r.right, (int *)&r.bottom);
+	XrcMon m;
 	DWORD st = WS_OVERLAPPEDWINDOW & ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
+	int fs = !(getenv("XRC_WINDOW") && !strcmp(getenv("XRC_WINDOW"), "windowed"));
+	int cw, ch, x, y, w, h;
 	(void)unused;
+	xrc_mon_get(0, &m); /* (the monitor under the cursor, else the primary: where the window is made) */
+	own_style = st; own_dpi = m.dpi;
+	xrc_default_client(&m, &cw, &ch);
+	own_fit(&m, st, &cw, &ch);
+	win_cw = cw; win_ch = ch;
+	if (fs) { x = m.x; y = m.y; w = m.w; h = m.h; }
+	else {
+		own_outer(st, m.dpi, cw, ch, &r);
+		w = r.right - r.left; h = r.bottom - r.top;
+		x = m.wx + (m.ww - w) / 2; y = m.wy + (m.wh - h) / 2;
+	}
 	memset(&wc, 0, sizeof wc);
 	wc.lpfnWndProc = own_proc;
 	wc.hInstance = GetModuleHandleA(0);
@@ -387,11 +482,17 @@ static DWORD WINAPI own_thread(LPVOID unused) {
 	wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
 	wc.lpszClassName = "xrc_vk_window";
 	RegisterClassA(&wc);
-	AdjustWindowRect(&r, st, FALSE);
-	window = CreateWindowExA(0, wc.lpszClassName, "LIGHTNING RETURNS: FINAL FANTASY XIII (recomp)", st | WS_VISIBLE, CW_USEDEFAULT,
-	                         CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, 0, 0, wc.hInstance, 0);
-	own_style = st;
-	if (window && !(getenv("XRC_WINDOW") && !strcmp(getenv("XRC_WINDOW"), "windowed"))) own_set_fs((HWND)window, 1);
+	own_fs = fs; xrc_disp_fs = fs;
+	window = CreateWindowExA(0, wc.lpszClassName, "LIGHTNING RETURNS: FINAL FANTASY XIII (recomp)", (fs ? (DWORD)WS_POPUP : st) | WS_VISIBLE, x, y, w, h, 0, 0, wc.hInstance, 0);
+	xrc_disp_hwnd = window;
+	InterlockedIncrement((volatile LONG *)&xrc_disp_gen);
+	if (window) {
+		RECT cr;
+		GetClientRect((HWND)window, &cr);
+		fprintf(stderr, "xrc: vulkan: window %s, client %ldx%ld at %d,%d on the %dx%d monitor (dpi %d = %d%%; monitor from: %s)\n", fs ? "borderless fullscreen" : "windowed",
+		        (long)(cr.right - cr.left), (long)(cr.bottom - cr.top), x, y, m.w, m.h, m.dpi, m.dpi * 100 / 96, m.src);
+		if (getenv("XRC_TEST_SEQ")) CloseHandle(CreateThread(0, 0, own_test_thread, _strdup(getenv("XRC_TEST_SEQ")), 0, 0));
+	}
 	SetEvent(own_ready);
 	if (!window) return 0;
 	while (GetMessageA(&msg, 0, 0, 0) > 0) { TranslateMessage(&msg); DispatchMessageA(&msg); }
@@ -399,7 +500,6 @@ static DWORD WINAPI own_thread(LPVOID unused) {
 }
 static void *plat_device_window(void) { return window; }
 static int plat_window(const char **iext, u32 *niext) {
-	if (dev.pp[0] > 1 && dev.pp[1] > 1) { own_w = (int)dev.pp[0]; own_h = (int)dev.pp[1]; }
 	own_ready = CreateEventA(0, TRUE, FALSE, 0);
 	CloseHandle(CreateThread(0, 0, own_thread, 0, 0, 0));
 	WaitForSingleObject(own_ready, INFINITE);
@@ -408,12 +508,17 @@ static int plat_window(const char **iext, u32 *niext) {
 	iext[(*niext)++] = "VK_KHR_win32_surface";
 	return 1;
 }
+/* hires2: the window's client is what the game's display follows; only with XRC_WIDTH / XRC_HEIGHT set (the game's back buffer is
+ * then not the window's) a windowed window is made that size, as before (fitted to the work area) */
 static void plat_resize(int w, int h) {
-	RECT r = {0, 0, w, h};
-	own_w = w; own_h = h; /* (the windowed size to come back to) */
-	if (own_fs) return; /* (fullscreen: the window stays the monitor's size; the picture is scaled to it) */
-	own_fit_work((int *)&r.right, (int *)&r.bottom);
-	AdjustWindowRect(&r, (DWORD)GetWindowLongA((HWND)window, GWL_STYLE), FALSE);
+	XrcMon m;
+	RECT r;
+	int cw = w, ch = h;
+	if (w < 64 || h < 64 || own_fs || !window || !getenv("XRC_WIDTH") || !getenv("XRC_HEIGHT")) return;
+	xrc_mon_get((HWND)window, &m);
+	own_fit(&m, own_style, &cw, &ch);
+	win_cw = cw; win_ch = ch;
+	own_outer(own_style, m.dpi, cw, ch, &r);
 	SetWindowPos((HWND)window, 0, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_ASYNCWINDOWPOS);
 }
 #endif
@@ -4656,6 +4761,8 @@ static void make_swapchain(void) {
 		VkSemaphoreCreateInfo si = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 		VKC(vkCreateSemaphore(vd, &si, 0, &swap_done[k]));
 	}
+	xrc_g_out_w = (int)swap_ext.width; xrc_g_out_h = (int)swap_ext.height;
+	xrc_size_note("output set (swap chain)");
 	LOG("xrc: vulkan: swap chain %ux%u, %u images, format %d\n", swap_ext.width, swap_ext.height, nswap, (int)swap_fmt);
 }
 
@@ -5072,6 +5179,7 @@ static void be_present(void) {
 			if (w != (int)swap_ext.width || h != (int)swap_ext.height) vkCmdClearColorImage(cb, si, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &sr);
 			b.dstOffsets[0].x = x; b.dstOffsets[0].y = y;
 			b.dstOffsets[1].x = x + w; b.dstOffsets[1].y = y + h; b.dstOffsets[1].z = 1;
+			xrc_size_frame((int)bb->w, (int)bb->h, w, h);
 		}
 		bq_add(bb, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL); IMG_R_XFER(bb); bq_go();
 #if defined(XRC_LR) && defined(_WIN32)
@@ -5128,6 +5236,7 @@ static void be_present(void) {
 			if (w != (int)swap_ext.width || h != (int)swap_ext.height) vkCmdClearColorImage(cb, swap_img[img], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &sr);
 			b.dstOffsets[0].x = x; b.dstOffsets[0].y = y;
 			b.dstOffsets[1].x = x + w; b.dstOffsets[1].y = y + h; b.dstOffsets[1].z = 1;
+			xrc_size_frame((int)bb->w, (int)bb->h, w, h);
 		}
 		bq_add(bb, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL); IMG_R_XFER(bb); bq_go();
 #if defined(XRC_LR) && defined(_WIN32)

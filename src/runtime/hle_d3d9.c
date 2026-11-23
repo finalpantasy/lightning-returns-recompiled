@@ -28,8 +28,14 @@ __declspec(dllimport) int __stdcall GetThreadTimes(void *, unsigned long long *,
 #define E_NOINTERFACE 0x80004002u
 #define E_OUTOFMEMORY 0x8007000eu
 
-static int disp_w(void) { const char *e = getenv("XRC_WIDTH"); return e && atoi(e) > 0 ? atoi(e) : 1280; }
-static int disp_h(void) { const char *e = getenv("XRC_HEIGHT"); return e && atoi(e) > 0 ? atoi(e) : 720; }
+/* hires2: the display is asked of xrc_rt.c (the monitor / window the game is on, physical pixels; see its comment) */
+void xrc_disp_size(int *w, int *h);
+int xrc_mode_list(int idx, int *w, int *h);
+int xrc_disp_reset_wanted(int bbw, int bbh);
+void xrc_size_note(const char *what);
+extern int xrc_g_bb_w, xrc_g_bb_h;
+static int disp_w(void) { int w = 0, h = 0; xrc_disp_size(&w, &h); return w; }
+static int disp_h(void) { int w = 0, h = 0; xrc_disp_size(&w, &h); return h; }
 static int trace = -1;
 static int tracing(void) {
 	if (trace < 0) trace = getenv("XRC_TRACE_D3D") != 0;
@@ -364,18 +370,14 @@ static void d_GetAdapterIdentifier(XCtx *c) {
 	RET(D3D_OK, 4);
 }
 static int display_format(u32 f) { return f == 22 || f == 23; } /* X8R8G8B8, R5G6B5 */
-/* hires1: the desktop's (native) size is the last mode, when it is not one of the fixed ones */
-static int native_extra(void) {
-	int k;
-	for (k = 0; k < NMODES; k++) if ((int)modes[k][0] == disp_w() && (int)modes[k][1] == disp_h()) return 0;
-	return 1;
-}
-static void d_GetAdapterModeCount(XCtx *c) { RET(display_format(A(2)) ? NMODES + native_extra() : 0, 3); }
+/* hires2: the modes the game lists: standard ones that fit the monitor, the monitor's own, and the display it is told (xrc_mode_list).
+ * The refresh rate reported is always 60 (put_mode): the game's pacing is 30 / 60; the real rate is the presentation's. */
+static void d_GetAdapterModeCount(XCtx *c) { RET(display_format(A(2)) ? (u32)xrc_mode_list(-1, 0, 0) : 0, 3); }
 static void put_mode(u32 p, u32 w, u32 h, u32 f) { M32(p) = w; M32(p + 4) = h; M32(p + 8) = 60; M32(p + 12) = f; }
 static void d_EnumAdapterModes(XCtx *c) {
-	if (!display_format(A(2)) || A(3) >= NMODES + native_extra()) RET(D3DERR_INVALIDCALL, 5);
-	if (A(3) == NMODES) put_mode(A(4), (u32)disp_w(), (u32)disp_h(), A(2));
-	else put_mode(A(4), modes[A(3)][0], modes[A(3)][1], A(2));
+	int w = 0, h = 0;
+	if (!display_format(A(2)) || !xrc_mode_list((int)A(3), &w, &h)) RET(D3DERR_INVALIDCALL, 5);
+	put_mode(A(4), (u32)w, (u32)h, A(2));
 	RET(D3D_OK, 5);
 }
 static void d_GetAdapterDisplayMode(XCtx *c) { put_mode(A(2), (u32)disp_w(), (u32)disp_h(), 22); RET(D3D_OK, 3); }
@@ -509,6 +511,8 @@ static void setup_buffers(void) {
 	dev.scissor[0] = 0; dev.scissor[1] = 0; dev.scissor[2] = w; dev.scissor[3] = h;
 	fprintf(stderr, "xrc: d3d9 back buffer %ux%u fmt %u x%u, %s, depth fmt %u, interval %x\n", w, h, dev.pp[2], dev.pp[3],
 	        dev.pp[8] ? "windowed" : "fullscreen", dev.pp[9] ? dev.pp[10] : 0, dev.pp[13]);
+	xrc_g_bb_w = (int)w; xrc_g_bb_h = (int)h;
+	xrc_size_note("back buffer set");
 }
 /* CreateDevice(adapter, type, hwnd, flags, D3DPRESENT_PARAMETERS *, IDirect3DDevice9 **) */
 static void d_CreateDevice(XCtx *c) {
@@ -545,7 +549,17 @@ static void dev_released(void) {
 	memset(&dev, 0, sizeof dev);
 	the_dev = 0;
 }
-static void v_TestCooperativeLevel(XCtx *c) { RET(D3D_OK, 1); }
+/* hires2: when the display the game is told changes (F11, another monitor, a dpi change), the game is asked to Reset (the
+ * standard D3DERR_DEVICENOTRESET), which then makes its back buffer at the new size. XRC_RESET_ON_CHANGE=0: never (the old back buffer
+ * is then scaled to the new output at present). */
+static int reset_asked, reset_seen; /* (reset_seen: the game has made its first Reset: before that the back buffer is the 1x1 of CreateDevice) */
+static void v_TestCooperativeLevel(XCtx *c) {
+	static unsigned long calls;
+	if (!calls++) fprintf(stderr, "xrc: d3d9 TestCooperativeLevel is called by the game (first call)\n");
+	if (reset_asked) RET(0x88760869u /* D3DERR_DEVICENOTRESET */, 1);
+	if (reset_seen && xrc_disp_reset_wanted(xrc_g_bb_w, xrc_g_bb_h)) { reset_asked = 1; RET(0x88760869u, 1); }
+	RET(D3D_OK, 1);
+}
 static void v_GetAvailableTextureMem(XCtx *c) { RET(0x3ff00000u, 1); }
 static void v_GetDirect3D(XCtx *c) { M32(A(1)) = dev.d3d; addref_g(dev.d3d); RET(D3D_OK, 2); }
 static void v_GetDeviceCaps(XCtx *c) { fill_caps(A(1)); RET(D3D_OK, 2); }
@@ -576,7 +590,9 @@ static void unbind_all(void) {
 static void v_Reset(XCtx *c) {
 	unbind_all();
 	memcpy(dev.pp, xrc_mem + A(1), sizeof dev.pp);
-	fprintf(stderr, "xrc: d3d9 Reset\n");
+	reset_seen = 1;
+	fprintf(stderr, "xrc: d3d9 Reset (the game's back buffer %ux%u%s)\n", dev.pp[0], dev.pp[1], reset_asked ? ", asked for by the display change" : "");
+	if (reset_asked) { dev.pp[0] = 0; dev.pp[1] = 0; reset_asked = 0; } /* (0: the display's size, setup_buffers) */
 	setup_buffers();
 	default_states();
 	if (d3_be) d3_be->reset();
@@ -690,7 +706,19 @@ static void present(void) {
 		{ struct timespec s7b; clock_gettime(CLOCK_MONOTONIC, &s7b); s7_last = (s7b.tv_sec - s7a.tv_sec) * 1e3 + (s7b.tv_nsec - s7a.tv_nsec) * 1e-6; if (getenv("XRC_SPIKE_FPS")) fprintf(stderr, "xrc: spike7: fps block %.2f ms\n", s7_last); }
 	}
 }
-static void v_Present(XCtx *c) { if (d3_be) d3_be->present(); present(); RET(D3D_OK, 5); }
+/* hires2: the game does not poll TestCooperativeLevel after its first call, so a display change is also reported from Present
+ * (D3DERR_DEVICELOST once; the game's reaction is logged, TestCooperativeLevel then answers D3DERR_DEVICENOTRESET) */
+static int reset_lost_sent;
+static void v_Present(XCtx *c) {
+	if (reset_seen && !reset_asked && xrc_disp_reset_wanted(xrc_g_bb_w, xrc_g_bb_h)) {
+		reset_asked = 1; reset_lost_sent = 1;
+		fprintf(stderr, "xrc: size: Present returns D3DERR_DEVICELOST (display change)\n");
+		RET(0x88760868u, 5);
+	}
+	if (d3_be) d3_be->present();
+	present();
+	RET(D3D_OK, 5);
+}
 static void v_GetBackBuffer(XCtx *c) {
 	if (A(1) || A(2)) RET(D3DERR_INVALIDCALL, 5);
 	addref_g(dev.backbuf);

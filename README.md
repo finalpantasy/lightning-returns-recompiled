@@ -40,6 +40,24 @@ endorsed by Square Enix.
   ps4star's WhiteRecomp launcher.
 - Optional HD movies and textures through the scripts in `tools/upscale` (you run them on your own files).
 
+## Display
+
+The game is told the size of the screen it is shown on, in real pixels, and makes its back buffer that size. The runtime
+detects the monitor the window is on, follows per-monitor DPI changes, and resets the device when you press F11 or move the window
+to another monitor or change its scaling. On a screen that is not 16:9 (21:9, 32:9, 16:10, 4:3) the game letterboxes or pillarboxes the
+picture itself, as it does natively; nothing is stretched or cropped. It never falls back to 720p silently: the log
+shows each size it picked (lines starting `xrc: size:`), including a check that the presented frame reaches the output size.
+
+Environment switches (all optional):
+
+- `XRC_WIDTH` and `XRC_HEIGHT`: force one display size (both must be set).
+- `XRC_BB_NATIVE=0`: report 1280x720 like the original build.
+- `XRC_DPI_AWARE=0`: skip per-monitor DPI awareness.
+- `XRC_RESET_ON_CHANGE=0`: do not ask the game to reset when the display changes.
+- `XRC_SIZE_STRICT=1`: a size problem (the presented frame smaller than the output) logs a warning and then exits with code 87.
+- Test hooks: `XRC_FAKE_MONITOR=WxH[@dpi]` pretends the monitor has that size (and DPI), `XRC_WINDOW_SIZE=WxH` sets the starting
+  windowed client size, `XRC_TEST_SEQ="secs:toggle,secs:fake=WxH@dpi,..."` presses F11 or fakes a monitor or DPI change at the given times.
+
 ## Build
 
 One command builds `lr.exe` from your own Steam copy of the game. Nothing game-derived is stored in this repository: the translator

@@ -1744,12 +1744,192 @@ void xrc_close_requested(void) {
 }
 
 #ifdef _WIN32
-/* hires1: per-monitor DPI awareness (v2) before any window exists, so Windows does not virtualize the desktop (150% scaling
- * made a 4K monitor look 2560x1440 and bitmap-stretched the window). XRC_DPI_AWARE=0 skips it. Then, unless XRC_WIDTH and XRC_HEIGHT
- * are set or XRC_BB_NATIVE=0, the primary monitor's physical size becomes the display the game is told about
- * (hle_d3d9.c / hle_user32.c read XRC_WIDTH / XRC_HEIGHT), so it makes a back buffer of that size, not 1280x720. */
+/* ======================================================================================== hires2: the display
+ * The game sizes its back buffer from the display it is told about (GetAdapterDisplayMode, GetDisplayMode, the window's
+ * default size, EnumDisplaySettings). hires1 told it the PRIMARY monitor's size once, at start. Here it is the size of what
+ * the game will be shown on, in physical pixels, asked again when the window, the monitor, the mode or the dpi changes:
+ *   borderless fullscreen: the monitor the window is on (before it exists: the monitor under the cursor, else the primary);
+ *   windowed: the window's client size (before it exists: XRC_WINDOW_SIZE=WxH, else a 16:9 size ~80% of the work area).
+ * The game pillarboxes / letterboxes a non-16:9 back buffer itself (a centered 16:9 picture, black elsewhere), so the
+ * monitor's own aspect is reported (21:9, 32:9, 16:10, 4:3, portrait): nothing is stretched or cropped.
+ * Overrides: XRC_WIDTH + XRC_HEIGHT (win), XRC_BB_NATIVE=0 (1280x720), XRC_DPI_AWARE=0, XRC_FAKE_MONITOR=WxH[@dpi] (test),
+ * XRC_WINDOW_SIZE=WxH (windowed client size), XRC_SIZE_STRICT=1 (the size warning is fatal). */
+#include "xrc_disp.h"
+void *xrc_disp_hwnd;             /* the window (vk_d3d9.c), 0 before it exists */
+volatile int xrc_disp_fs = 1;    /* borderless fullscreen (1) or windowed (0), kept by vk_d3d9.c */
+volatile long xrc_disp_gen = 1;  /* bumped when the window / monitor / mode / dpi may have changed */
+int xrc_g_bb_w, xrc_g_bb_h;      /* the back buffer the game has (hle_d3d9.c) */
+int xrc_g_out_w, xrc_g_out_h;    /* the swap chain (vk_d3d9.c) */
+static int dpi_aware_on;
+static int logged_lastresort;
+static int dpi_of_monitor(HMONITOR hm) {
+	typedef HRESULT (WINAPI *GDM)(HMONITOR, int, UINT *, UINT *);
+	static GDM f;
+	static int tried;
+	UINT dx = 0, dy = 0;
+	if (!tried) { HMODULE m = LoadLibraryA("shcore.dll"); if (m) f = (GDM)(void *)GetProcAddress(m, "GetDpiForMonitor"); tried = 1; }
+	if (f && hm && f(hm, 0 /* MDT_EFFECTIVE_DPI */, &dx, &dy) == 0 && dx) return (int)dx;
+	{ HDC dc = GetDC(0); int d = dc ? GetDeviceCaps(dc, LOGPIXELSX) : 96; if (dc) ReleaseDC(0, dc); return d > 0 ? d : 96; }
+}
+static int parse_wh(const char *s, int *w, int *h, int *dpi) {
+	int a = 0, b = 0, d = 0, n;
+	if (!s) return 0;
+	n = sscanf(s, "%dx%d@%d", &a, &b, &d);
+	if (n < 2 || a < 64 || b < 64) return 0;
+	*w = a; *h = b; if (dpi && n >= 3 && d >= 48) *dpi = d;
+	return 1;
+}
+/* The monitor of window hwnd (or, with none, of the cursor), in physical pixels. Always fills m (fallbacks: the monitor's work
+ * area, the primary monitor, then 1920x1080 with a warning); m->src says which. */
+int xrc_mon_get(void *hwnd, XrcMon *m) {
+	MONITORINFOEXA mi;
+	HMONITOR hm = 0;
+	POINT pt;
+	DEVMODEA dm;
+	int ok = 0, fw, fh, fd = 0;
+	memset(m, 0, sizeof *m);
+	if (hwnd && IsWindow((HWND)hwnd)) hm = MonitorFromWindow((HWND)hwnd, MONITOR_DEFAULTTONEAREST);
+	else { if (!GetCursorPos(&pt)) pt.x = pt.y = 0; hm = MonitorFromPoint(pt, MONITOR_DEFAULTTOPRIMARY); }
+	memset(&mi, 0, sizeof mi); mi.cbSize = sizeof mi;
+	if (hm && GetMonitorInfoA(hm, (MONITORINFO *)&mi)) {
+		m->x = mi.rcMonitor.left; m->y = mi.rcMonitor.top; m->w = mi.rcMonitor.right - mi.rcMonitor.left; m->h = mi.rcMonitor.bottom - mi.rcMonitor.top;
+		m->wx = mi.rcWork.left; m->wy = mi.rcWork.top; m->ww = mi.rcWork.right - mi.rcWork.left; m->wh = mi.rcWork.bottom - mi.rcWork.top;
+		m->src = "monitor";
+		m->dpi = dpi_of_monitor(hm);
+		memset(&dm, 0, sizeof dm); dm.dmSize = sizeof dm;
+		if (EnumDisplaySettingsA(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm)) {
+			m->hz = (int)dm.dmDisplayFrequency;
+			if (!dpi_aware_on && dm.dmPelsWidth > 0 && dm.dmPelsHeight > 0) { /* (unaware: the rect is virtualized; the mode is physical) */
+				m->w = (int)dm.dmPelsWidth; m->h = (int)dm.dmPelsHeight; m->src = "display mode (dpi-unaware)";
+			}
+		}
+		if (m->w > 0 && m->h > 0) ok = 1;
+		else if (m->ww > 0 && m->wh > 0) { m->w = m->ww; m->h = m->wh; m->src = "monitor work area"; ok = 1; }
+	}
+	if (!ok) {
+		m->w = GetSystemMetrics(SM_CXSCREEN); m->h = GetSystemMetrics(SM_CYSCREEN); m->x = m->y = 0;
+		m->wx = m->wy = 0; m->ww = m->w; m->wh = m->h; m->src = "primary monitor (GetSystemMetrics)";
+		if (!m->dpi) m->dpi = 96;
+		if (m->w <= 0 || m->h <= 0) {
+			m->w = m->ww = 1920; m->h = m->wh = 1080; m->src = "LAST RESORT 1920x1080";
+			if (!logged_lastresort) { logged_lastresort = 1; fprintf(stderr, "xrc: size: WARNING no monitor size could be read: assuming 1920x1080\n"); }
+		}
+	}
+	if (parse_wh(getenv("XRC_FAKE_MONITOR"), &fw, &fh, &fd)) { /* (a test: this monitor, at the real one's origin) */
+		m->w = fw; m->h = fh; if (fd) m->dpi = fd;
+		m->ww = fw; m->wh = fh - 40 * m->dpi / 96; m->wx = m->x; m->wy = m->y;
+		m->src = "XRC_FAKE_MONITOR";
+	}
+	if (m->dpi < 48) m->dpi = 96;
+	return ok;
+}
+/* the windowed client size to start with: XRC_WINDOW_SIZE, else a standard 16:9 size within ~80% of the work area */
+void xrc_default_client(const XrcMon *m, int *w, int *h) {
+	static const int std[][2] = {{3840, 2160}, {3200, 1800}, {2560, 1440}, {1920, 1080}, {1600, 900}, {1280, 720}, {960, 540}};
+	int k, aw, ah, dw, dh, d = 0;
+	if (parse_wh(getenv("XRC_WINDOW_SIZE"), w, h, &d)) return;
+	dw = 16 * m->dpi / 96; dh = 39 * m->dpi / 96; /* (the frame, roughly: vk_d3d9.c clamps with the real one) */
+	aw = (m->ww > 0 ? m->ww : m->w) * 8 / 10 - dw; ah = (m->wh > 0 ? m->wh : m->h) * 8 / 10 - dh;
+	for (k = 0; k < 7; k++) if (std[k][0] <= aw && std[k][1] <= ah) { *w = std[k][0]; *h = std[k][1]; return; }
+	if (aw < 320) aw = 320;
+	if (ah < 180) ah = 180;
+	if ((long)aw * 9 > (long)ah * 16) aw = ah * 16 / 9; else ah = aw * 9 / 16;
+	*w = aw & ~1; *h = ah & ~1;
+}
+static int client_of(int *w, int *h) {
+	RECT r;
+	if (!xrc_disp_hwnd || !IsWindow((HWND)xrc_disp_hwnd) || IsIconic((HWND)xrc_disp_hwnd) || !GetClientRect((HWND)xrc_disp_hwnd, &r)) return 0;
+	if (r.right - r.left < 64 || r.bottom - r.top < 64) return 0;
+	*w = r.right - r.left; *h = r.bottom - r.top;
+	return 1;
+}
+/* what the game is told the display is (and its back buffer's size when its Reset says 0x0), physical pixels */
+void xrc_disp_size(int *w, int *h) {
+	static int ov = -1, ow, oh, nat0, cw, ch;
+	static long gen;
+	if (ov < 0) {
+		const char *a = getenv("XRC_WIDTH"), *b = getenv("XRC_HEIGHT"), *n = getenv("XRC_BB_NATIVE");
+		ov = (a && b && atoi(a) > 0 && atoi(b) > 0) ? 1 : 0;
+		if (ov) { ow = atoi(a); oh = atoi(b); fprintf(stderr, "xrc: size: display %dx%d from XRC_WIDTH/XRC_HEIGHT (override)\n", ow, oh); }
+		nat0 = n && !strcmp(n, "0");
+		if (!ov && nat0) fprintf(stderr, "xrc: size: display 1280x720 (XRC_BB_NATIVE=0)\n");
+	}
+	if (ov) { *w = ow; *h = oh; return; }
+	if (nat0) { *w = 1280; *h = 720; return; }
+	if (!cw || gen != xrc_disp_gen) {
+		XrcMon m;
+		int pw = cw, ph = ch, cx, cy;
+		const char *mode;
+		gen = xrc_disp_gen;
+		xrc_mon_get(xrc_disp_hwnd, &m);
+		if (client_of(&cx, &cy)) { cw = cx; ch = cy; mode = xrc_disp_fs ? "fullscreen, window client" : "windowed, window client"; }
+		else if (xrc_disp_fs) { cw = m.w; ch = m.h; mode = "fullscreen, monitor"; }
+		else { xrc_default_client(&m, &cw, &ch); mode = "windowed, default client"; }
+		if (cw != pw || ch != ph)
+			fprintf(stderr, "xrc: size: display %dx%d for the game (%s; monitor %dx%d at %d,%d, %d Hz, dpi %d = %d%%, from: %s)\n", cw, ch, mode, m.w, m.h, m.x, m.y,
+			        m.hz, m.dpi, m.dpi * 100 / 96, m.src ? m.src : "?");
+	}
+	*w = cw; *h = ch;
+}
+/* hle_d3d9.c: should the game Reset to a new display size now? (once per size) */
+int xrc_disp_reset_wanted(int bbw, int bbh) {
+	static int asked_w, asked_h;
+	int w, h;
+	const char *e = getenv("XRC_RESET_ON_CHANGE");
+	if (getenv("XRC_WIDTH") && getenv("XRC_HEIGHT")) return 0;
+	if (e && !strcmp(e, "0")) return 0;
+	xrc_disp_size(&w, &h);
+	if (w == bbw && h == bbh) { asked_w = asked_h = 0; return 0; }
+	if (w == asked_w && h == asked_h) return 0;
+	asked_w = w; asked_h = h;
+	fprintf(stderr, "xrc: size: display is now %dx%d, back buffer %dx%d: asking the game to Reset\n", w, h, bbw, bbh);
+	return 1;
+}
+/* the modes the game's resolution list shows: standard ones that fit the monitor, the monitor's own, the game's display */
+int xrc_mode_list(int idx, int *w, int *h) {
+	static const int std[][2] = {{640, 480}, {800, 600}, {1024, 768}, {1280, 720}, {1280, 1024}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3840, 2160}, {5120, 2880}, {7680, 4320}};
+	int lw[32], lh[32], n = 0, k, j, dw, dh, i;
+	XrcMon m;
+	xrc_mon_get(xrc_disp_hwnd, &m);
+	xrc_disp_size(&dw, &dh);
+	for (k = 0; k < (int)(sizeof std / sizeof std[0]); k++) if (std[k][0] <= m.w && std[k][1] <= m.h) { lw[n] = std[k][0]; lh[n] = std[k][1]; n++; }
+	lw[n] = m.w; lh[n] = m.h; n++;
+	lw[n] = dw; lh[n] = dh; n++;
+	for (k = 0; k < n; k++) for (j = k + 1; j < n; j++) if (lw[j] < lw[k] || (lw[j] == lw[k] && lh[j] < lh[k])) {
+		i = lw[k]; lw[k] = lw[j]; lw[j] = i; i = lh[k]; lh[k] = lh[j]; lh[j] = i;
+	}
+	for (k = j = 0; k < n; k++) if (!j || lw[k] != lw[j - 1] || lh[k] != lh[j - 1]) { lw[j] = lw[k]; lh[j] = lh[k]; j++; }
+	if (idx < 0) return j;
+	if (idx >= j) return 0;
+	*w = lw[idx]; *h = lh[idx];
+	return 1;
+}
+/* one line each time the back buffer or the output (swap chain) size is set */
+void xrc_size_note(const char *what) {
+	XrcMon m;
+	xrc_mon_get(xrc_disp_hwnd, &m);
+	fprintf(stderr, "xrc: size: %s: back buffer %dx%d, output %dx%d, monitor %dx%d, dpi %d (%d%%)\n", what, xrc_g_bb_w, xrc_g_bb_h, xrc_g_out_w, xrc_g_out_h,
+	        m.w, m.h, m.dpi, m.dpi * 100 / 96);
+}
+/* vk_d3d9.c, at each Present: the final copy (src: the back buffer; dst: the rectangle of the swap chain it lands in).
+ * Once the pair has been stable for 90 frames (a Reset after a mode change has had its time): WARNING when the presented frame
+ * is smaller than the output on either axis (it is resampled up at present, or came through a small intermediate);
+ * XRC_SIZE_STRICT=1 makes that fatal. */
+void xrc_size_frame(int sw, int sh, int dw, int dh) {
+	static int k[4], stable, done;
+	if (k[0] != sw || k[1] != sh || k[2] != dw || k[3] != dh) { k[0] = sw; k[1] = sh; k[2] = dw; k[3] = dh; stable = 0; done = 0; return; }
+	if (done || ++stable < 90) return;
+	done = 1;
+	if (sw < dw || sh < dh) {
+		const char *st = getenv("XRC_SIZE_STRICT");
+		int strict = st && strcmp(st, "0");
+		fprintf(stderr, "xrc: size: WARNING the presented frame (%dx%d) is smaller than the output it fills (%dx%d): it is stretched at present%s\n", sw, sh, dw, dh,
+		        strict ? " -- XRC_SIZE_STRICT: exiting" : "");
+		if (strict) { fflush(stderr); xrc_exit_now(87); }
+	} else fprintf(stderr, "xrc: size: check ok: the presented frame %dx%d reaches the output rectangle %dx%d without a smaller step\n", sw, sh, dw, dh);
+}
 static void hires_init(void) {
-	const char *dp = getenv("XRC_DPI_AWARE"), *nat = getenv("XRC_BB_NATIVE");
+	const char *dp = getenv("XRC_DPI_AWARE");
 	if (!dp || strcmp(dp, "0")) {
 		typedef BOOL (WINAPI *SetCtx)(HANDLE);
 		SetCtx f = (SetCtx)(void *)GetProcAddress(GetModuleHandleA("user32.dll"), "SetProcessDpiAwarenessContext");
@@ -1759,21 +1939,22 @@ static void hires_init(void) {
 			Old g = (Old)(void *)GetProcAddress(GetModuleHandleA("user32.dll"), "SetProcessDPIAware");
 			if (g) g();
 		}
+		dpi_aware_on = 1;
 		fprintf(stderr, "xrc: dpi awareness: %s\n", ok ? "per-monitor v2" : "older call / already set");
 	}
-	if (!(nat && !strcmp(nat, "0")) && !(getenv("XRC_WIDTH") && getenv("XRC_HEIGHT"))) {
-		POINT o = {0, 0};
-		MONITORINFO mi;
-		memset(&mi, 0, sizeof mi); mi.cbSize = sizeof mi;
-		if (GetMonitorInfoA(MonitorFromPoint(o, MONITOR_DEFAULTTOPRIMARY), &mi) && mi.rcMonitor.right > mi.rcMonitor.left) {
-			char w[16], h[16];
-			snprintf(w, sizeof w, "%ld", (long)(mi.rcMonitor.right - mi.rcMonitor.left));
-			snprintf(h, sizeof h, "%ld", (long)(mi.rcMonitor.bottom - mi.rcMonitor.top));
-			_putenv_s("XRC_WIDTH", w); _putenv_s("XRC_HEIGHT", h);
-			fprintf(stderr, "xrc: native display %sx%s (the back buffer's size; XRC_BB_NATIVE=0 for 1280x720)\n", w, h);
-		}
+	{ /* the first look at the display, so the log shows what was found before any window exists */
+		XrcMon m;
+		xrc_mon_get(0, &m);
+		fprintf(stderr, "xrc: size: startup monitor %dx%d at %d,%d, %d Hz, dpi %d (%d%%), from: %s\n", m.w, m.h, m.x, m.y, m.hz, m.dpi, m.dpi * 100 / 96, m.src);
 	}
 }
+#else
+void xrc_disp_size(int *w, int *h) { *w = getenv("XRC_WIDTH") ? atoi(getenv("XRC_WIDTH")) : 1280; *h = getenv("XRC_HEIGHT") ? atoi(getenv("XRC_HEIGHT")) : 720; }
+int xrc_mode_list(int idx, int *w, int *h) { (void)idx; (void)w; (void)h; return 0; }
+int xrc_disp_reset_wanted(int a, int b) { (void)a; (void)b; return 0; }
+void xrc_size_note(const char *what) { (void)what; }
+void xrc_size_frame(int a, int b, int c, int d) { (void)a; (void)b; (void)c; (void)d; }
+int xrc_g_bb_w, xrc_g_bb_h, xrc_g_out_w, xrc_g_out_h;
 #endif
 /* ------------------------------------------------------------------------------------------------ entry */
 #ifdef _WIN32
