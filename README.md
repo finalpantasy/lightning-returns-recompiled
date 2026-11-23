@@ -40,29 +40,59 @@ endorsed by Square Enix.
 
 ## Build
 
-Requirements: Windows 10/11 x64, your Steam copy of the game, [llvm-mingw](https://github.com/mstorsjo/llvm-mingw), Python 3, the
-[Vulkan headers](https://github.com/KhronosGroup/Vulkan-Headers), a shared LGPL build of [FFmpeg](https://ffmpeg.org/), the
-[Odin compiler](https://odin-lang.org/) (translator and launcher), and Valve's `steam_api64.dll` (copy it from your Steam install).
+One command builds `lr.exe` from your own Steam copy of the game. Nothing game-derived is stored in this repository: the translator
+reads your `LRFF13.exe` (read only) and writes the C pages into `build/_work`, which git ignores.
 
-1. **Get the translator.** [ps4star/XRC](https://github.com/ps4star/XRC) (The Unlicense). Clone it, apply `patches/odin-rexcode-i386.patch`
-   from that repo to Odin's `core:rexcode`, and build:
-   `odin build src -out:xrc.exe -o:speed -extra-linker-flags:/STACK:16777216`.
-   `patches/README.md` lists what the public translator still needs for this game (x87 handling and a few function-map additions;
-   the patch for those is not published yet).
-2. **Translate your own executable.** Copy the game's unpacked `LRFF13.exe` into a work folder, give XRC a function map and `xrc.cfg` for
-   it, and run it. It writes `page_*.c` and `xrc_table.c`. The generated files stay in the work folder.
-3. **Generate the math overrides, build the runtime and link:**
-   ```
-   LR_GEN=<translator output dir> python tools/ovr_math/gen_ovr_math.py
-   LR_GEN=<translator output dir> FFMPEG=<ffmpeg dir> VULKAN_HEADERS=<vulkan-headers dir> \
-   LLVM_MINGW=<llvm-mingw dir> sh build/build.sh
-   ```
-   `gen_ovr_math.py` writes `src/runtime/ovr_math_gen.inc` from your pages. Output is `out/lr.exe`.
-4. **Run:** put `lr.exe`, the FFmpeg DLLs and `steam_api64.dll` next to the game's data (or point the runtime at it) and start it with
-   Steam running. Build the launcher with `launcher/build.ps1` (set `ODIN` if `odin` is not on your PATH).
+```
+python build/build_all.py --game "C:\Program Files (x86)\Steam\steamapps\common\LIGHTNING RETURNS FINAL FANTASY XIII"
+```
 
-Environment variables used by the helper scripts: `LR_GEN` (translator output), `LR_ROOT` (work folder for the name tools), `LR_GAME_DIR`
-(your game install, texture extraction), `TEXCONV`, `SEEDVR2_DIR`, `GLSLANG`.
+The output folder (`out/`, change it with `--out`) gets `lr.exe`, the FFmpeg DLLs, `steam_api64.dll` and `BUILD_INFO.txt`.
+
+What the script does, in order:
+
+1. Checks `LRFF13.exe` against the SHA-256 of the current Steam build, `31a2bc59d305075f0e8eacee4f65f413a3205186b52b786d9f3a9db8aec1cf93`
+   (34,003,456 bytes, no DRM). Another build is refused: the function map in `translator/lr/` is made for exactly this file. If yours
+   differs, verify the game files in Steam first.
+2. Finds the toolchain, or downloads it into `build/_deps` (see below).
+3. Clones [ps4star/XRC](https://github.com/ps4star/XRC) at the pinned commit `0fdf2205623b8c9aa9fb3e6822f3508cefc677cd`, applies
+   `patches/xrc-lr.patch` (our x87 changes) and builds it with Odin.
+4. Translates your exe to C with `translator/lr/` (function map, overrides, config: addresses and sizes only, see
+   [translator/lr/README.md](translator/lr/README.md)).
+5. Generates `ovr_math_gen.inc` from your translated pages (`tools/ovr_math/gen_ovr_math.py`), compiles the runtime in `src/` and the
+   158 pages with clang, and links.
+
+A first build took about 15 minutes with 3 parallel compiles on a 16-core PC (one page alone can take 5 to 11 minutes, so expect up to an
+hour on 4 cores) and needs about 3 GB in `build/_work`. Compiles run at
+below-normal priority; `--jobs N` sets how many run at once (default 4). A second run redoes only what changed.
+
+### What you need
+
+- Windows 10/11 x64, your Steam copy of the game, [Python 3](https://www.python.org/downloads/) and
+  [Git](https://git-scm.com/download/win) (`winget install Python.Python.3.12 Git.Git`).
+- A C compiler: [llvm-mingw](https://github.com/mstorsjo/llvm-mingw), the UCRT x86-64 build, which supplies clang, the MinGW headers and
+  pthreads. MSVC's `cl` and LLVM's own Windows clang cannot build it. `winget install MartinStorsjo.LLVM-MinGW.UCRT` (per user), or
+  let the script download it, or pass `--llvm-mingw <dir>`. (ps4star's WhiteRecomp launcher gets its compiler the same way.)
+- To build the translator: the [Odin](https://odin-lang.org/) compiler (release `dev-2026-11`) and the Windows SDK plus MSVC libraries
+  that Odin links against: Visual Studio Build Tools with the "Desktop development with C++" workload
+  (`winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive"`).
+  Odin is downloaded for you; the Build Tools are not. Pass `--xrc <prebuilt xrc.exe>` to skip this part.
+- A shared LGPL build of FFmpeg 9.0 with headers (BtbN's `win64-lgpl-shared`) and the
+  [Vulkan headers](https://github.com/KhronosGroup/Vulkan-Headers) (v1.4.330). Both are downloaded when missing, or pass `--ffmpeg <dir>`
+  and `--vulkan-headers <dir>`.
+- Valve's 64-bit `steam_api64.dll`. The script copies it from any 64-bit game in your Steam library, or pass `--steam-api <file>`.
+
+`python build/build_all.py --help` lists every option (`--no-download`, `--march x86-64-v3` for an exe you will copy to another PC,
+`--launcher` to build the launcher too, `--stop-after translate|compile`). The same locations can come from the environment variables
+`LLVM_MINGW`, `FFMPEG`, `VULKAN_HEADERS` and `ODIN`.
+
+### Run
+
+Put the game's data (`weiss_data` and the other files from your install) beside `lr.exe`, or point the runtime at it, and start it with
+Steam running. The launcher builds with `--launcher` or `launcher/build.ps1` (set `ODIN` if `odin` is not on your PATH).
+
+Environment variables used by the helper scripts: `LR_GEN` (translator output, for `gen_ovr_math.py`), `LR_ROOT` (work folder for the name
+tools), `LR_GAME_DIR` (your game install, texture extraction), `TEXCONV`, `SEEDVR2_DIR`, `GLSLANG`.
 
 ## Credits
 

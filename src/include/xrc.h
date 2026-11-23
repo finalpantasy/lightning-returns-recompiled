@@ -1,11 +1,12 @@
-/* xrc.h - runtime of the x86 static recompiler (ff xrc, tools/ff). Generated C includes only this.
+/* xrc.h - what the C that xrc generates compiles against (the generated pages include only this). A copy of the header
+ * the FINAL FANTASY XIII port's runtime uses: the runtime (memory, threads, the dispatcher, the platform layer) is not part of xrc.
  *
  * A translated function `void xf_<addr>(XCtx *c)` keeps the x86 registers in locals (r_eax..r_edi, r_esp), the
  * flags as separate values computed only where read, the x87 stack as doubles at statically known depths, and
  * reaches guest memory through M8/M16/M32/... (guest address -> host pointer: XM + address).
  *
  * Two builds of the same C:
- *   XRC_INGAME  (VC++ 2008, 32-bit, linked into the retail exe by ff link --effect): guest addresses are host
+ *   XRC_INGAME  (VC++ 2008, 32-bit, linked into the retail exe by the port's own linker tool): guest addresses are host
  *               addresses (XM = 0). `sub_<addr>` is a naked entry thunk that saves the real registers into an XCtx
  *               and calls xf_<addr>; calls out of a translated function run the original (native) code with the
  *               real registers and esp loaded (XCALL). The guest stack of a translated function is a copy of its
@@ -71,7 +72,7 @@ typedef struct XCtx {
 
 /* XRC_PNONE (an A/B experiment; clang, x86-64 only): translated functions use clang's preserve_none calling
  * convention -- the callee saves no host registers (no push / pop at every entry and exit), the caller keeps only
- * what it needs across the call. XRC_CC marks every function of that type: the translations (ff xrc emits it) and
+ * what it needs across the call. XRC_CC marks every function of that type: the translations (xrc emits it) and
  * the runtime's overrides and manual entries. Pages, dispatch table and runtime must all be built with it or without. */
 #if defined(XRC_PNONE) && defined(__clang__) && defined(__x86_64__)
 #define XRC_CC __attribute__((preserve_none))
@@ -82,8 +83,21 @@ typedef struct XCtx {
 typedef void (XRC_CC *XFn)(XCtx *);
 
 /* ---- guest memory ---- */
+/* x86-64 (not macOS: its programs reserve the low 4 GB): guest memory at a fixed host address by default, so its base
+ * is a constant -- below 2 GB it folds into every access's displacement, a register freed (about 4% of the main
+ * thread). -DXRC_NO_FIXED_BASE: the base found at run time instead (xrc_mem). 0x7fff0000: the only such base on Windows (just above its shared data page at 0x7ffe0000, in every process); its
+ * 4 GB end at 0x17fff0000, clear of a Linux program's C heap (brk, after its image) -- the Windows exe is linked above
+ * (--image-base 0x200000000). ARM64 has no such displacement: a register either way, so the base is found there. */
+#if defined(__x86_64__) && !defined(__APPLE__) && !defined(XRC_NO_FIXED_BASE) && !defined(XRC_FIXED_BASE) && !defined(XRC_INGAME) && !defined(XRC_CHECK)
+#define XRC_FIXED_BASE 0x7fff0000
+#endif
 #if defined(XRC_INGAME) || defined(XRC_CHECK)
 #define XM ((u8 *)0)
+#elif defined(XRC_FIXED_BASE)
+/* XRC_FIXED_BASE (another one: -DXRC_FIXED_BASE=0x...): guest memory at that host address (reserve_guest: there or
+ * not at all) */
+extern u8 *xrc_mem;
+#define XM ((u8 *)(unsigned long long)(XRC_FIXED_BASE))
 #else
 extern u8 *xrc_mem;
 #ifdef XRC_PAGE
@@ -146,6 +160,25 @@ extern XRC_THREAD XrcTls xrc_tls_v;
 #define FS32(off) M32(xrc_teb + (u32)(off))
 #define FS32_SET(off, v) (M32(xrc_teb + (u32)(off)) = (u32)(v))
 #endif
+
+/* fs: / gs:[ea] is XRC_SEG_FS / XRC_SEG_GS + ea: the segment's base, which the runtime keeps per guest thread. In a
+ * Windows program fs: is the thread's TEB (the SEH chain at fs:[0], the TLS array at fs:[0x2c]); in a Linux one gs:
+ * is TLS, set up by set_thread_area. A runtime may define either itself (the FINAL FANTASY XIII one: XRC_SEG_FS is
+ * xrc_teb). */
+#ifndef XRC_SEG_FS
+extern XRC_THREAD u32 xrc_seg_fs;
+#define XRC_SEG_FS xrc_seg_fs
+#endif
+#ifndef XRC_SEG_GS
+extern XRC_THREAD u32 xrc_seg_gs;
+#define XRC_SEG_GS xrc_seg_gs
+#endif
+/* int N (Linux's system call int 0x80, ...): the registers are in c (c->eip: the next instruction) and are
+ * reloaded after it */
+void xrc_int(XCtx *c, u32 n);
+/* a segment register loaded (mov gs, ax ...; seg: 0 es, 1 cs, 2 ss, 3 ds, 4 fs, 5 gs): the runtime looks the selector up
+ * (the descriptor set_thread_area made) and sets XRC_SEG_FS / XRC_SEG_GS */
+void xrc_set_seg(XCtx *c, u32 seg, u32 sel);
 
 /* ---- helpers ---- */
 #define PAR8(v) ((u8)(~((0x6996u >> (((v) ^ ((v) >> 4)) & 0xf)) & 1)) & 1) /* x86 PF: even number of set bits */
@@ -540,22 +573,72 @@ XRC_INLINE int xcond(int cc, u32 cf, u32 f) {
 	return 0;
 }
 
+/* a translation made with XRC_FL_VERIFY=1 (src/xrc_flags.odin): each condition evaluated the flag plan's way
+ * (n) and the old way (o); a difference is reported (xrc_rt.c), the old one is used */
+void xrc_flbad(u32 addr);
+XRC_INLINE int xrc_flchk(u32 addr, int n, int o) {
+	if ((n != 0) != (o != 0)) xrc_flbad(addr);
+	return o;
+}
+
 /* fcomi/fucomi/comiss/ucomiss/comisd/ucomisd: ZF PF CF = 000 a>b, 001 a<b, 100 a==b, 111 unordered; OF=SF=0 */
 #define XFCOMI(a_, b_) { double xa_ = (a_), xb_ = (b_); cc_op = CC_RAW; \
 	XRC_PROBE(1, (u64_of(xa_) << 1) == 0xffe0000000000000ull || (u64_of(xb_) << 1) == 0xffe0000000000000ull); \
 	if (xrc_isnan(xa_) || xrc_isnan(xb_)) { cc_r = XF_ZF | XF_PF; cf = 1; } \
 	else { cc_r = xa_ > xb_ ? 0u : xa_ < xb_ ? 0u : XF_ZF; cf = xa_ < xb_; } }
+/* the same compare fused into its readers (src/xrc_flags.odin: cc_fa / cc_fb): unordered, by bits (the pages
+ * are built with finite math), and XFCOMI's probe */
+XRC_INLINE int xfc_un(double a, double b) { return xrc_isnan(a) || xrc_isnan(b); }
+#define XFC_PROBE(a_, b_) XRC_PROBE(1, (u64_of(a_) << 1) == 0xffe0000000000000ull || (u64_of(b_) << 1) == 0xffe0000000000000ull)
+
+/* ---- trimmed register syncs (xrc_translator x_sync_plan) ----
+ * Which guest registers a call or a return stores to XCtx (x_sm_: the ones the function changed since XCtx last had
+ * them -- the others are there already) and which a call reloads after (x_fm_: the ones read before the next write or
+ * call -- the others' locals are stale until then, never stored). Bits: 1 eax, 2 ecx, 4 edx, 8 ebx, 0x10 ebp,
+ * 0x20 esi, 0x40 edi; esp always both. The translator puts a block's own enum around each call / return it trims;
+ * everything else gets this file-scope one (all). -DXRC_NO_SYNC_TRIM: all everywhere (to compare). */
+#if defined(XRC_PAGE) && !defined(XRC_ABI_CHECK) && !defined(XRC_NO_SYNC_TRIM) && !defined(XRC_INGAME) && !defined(XRC_CHECK)
+enum { x_sm_ = 0x7f, x_fm_ = 0x7f };
+#define XRC_SM_ x_sm_
+#define XRC_FM_ x_fm_
+#else
+#define XRC_SM_ 0x7f
+#define XRC_FM_ 0x7f
+#endif
+#define XRC_SPILL_REGS { if (XRC_SM_ & 1) c->eax = r_eax; if (XRC_SM_ & 2) c->ecx = r_ecx; if (XRC_SM_ & 4) c->edx = r_edx; \
+	if (XRC_SM_ & 8) c->ebx = r_ebx; if (XRC_SM_ & 0x10) c->ebp = r_ebp; if (XRC_SM_ & 0x20) c->esi = r_esi; if (XRC_SM_ & 0x40) c->edi = r_edi; }
 
 /* ---- return (ret / ret N): pop the guest return address, publish registers, map esp back ---- */
 #define XRC_RETURN(nbytes)                                                                                          \
 	do {                                                                                                            \
 		u32 _ip_ = M32(r_esp);                                                                                      \
 		r_esp += 4u + (u32)(nbytes);                                                                                \
-		c->eax = r_eax; c->ecx = r_ecx; c->edx = r_edx; c->ebx = r_ebx;                                             \
-		c->ebp = r_ebp; c->esi = r_esi; c->edi = r_edi;                                                             \
+		XRC_SPILL_REGS                                                                                              \
 		c->esp = XRC_ESP_OUT; c->eip = _ip_;                                                                        \
 		return;                                                                                                     \
 	} while (0)
+
+/* ---- an inlined leaf's ret (xrc x_inline_site): the return address its call pushed popped (checked: a callee
+ * that changed its return address is fatal, as it is for a call -- xrc_bad_return), the arguments too (ret N), then on
+ * past the body (lbl_, the site's) */
+void xrc_bad_return(XCtx *c, u32 target);
+/* the call macros inside an inlined SSE body (xrc_translator x_inline_plan): the same ones, under names the
+ * translator's renaming of an SSE caller's calls (to XCALLM*: its own xmm registers around them) does not touch --
+ * the body moves its own (XI) around the call itself */
+#define XCDK_ XCALLDK
+#define XCD_ XCALLD
+#define XC_ XCALL
+#define XRC_INL_RET(nbytes, ra_, tgt_, lbl_)                                                                         \
+	{                                                                                                               \
+		u32 _ip_ = M32(r_esp);                                                                                      \
+		r_esp += 4u + (u32)(nbytes);                                                                                \
+		if (_ip_ != (ra_)) {                                                                                        \
+			c->eax = r_eax; c->ecx = r_ecx; c->edx = r_edx; c->ebx = r_ebx;                                         \
+			c->ebp = r_ebp; c->esi = r_esi; c->edi = r_edi; c->esp = r_esp; c->eip = _ip_;                           \
+			xrc_bad_return(c, (tgt_));                                                                              \
+		}                                                                                                           \
+		goto lbl_;                                                                                                  \
+	}
 
 /* ---- entry / calls ---- */
 #if defined(XRC_INGAME) || defined(XRC_CHECK)
@@ -731,8 +814,13 @@ static __declspec(naked) void xrc_enterf(void) { XRC_ENTER_BODY(__asm { fld qwor
 #define XCALLD(tgt, fn) XCALL(tgt)
 #define XCALLMD(tgt, fn) XCALLM(tgt)
 #define XRC_SPIN_YIELD()
+#define XRC_INL_PREEMPT()
 #define XCALLXD(tgt, kin_, kout_, fn) XCALLX(tgt, kin_, kout_)
 #define XCALLXMD(tgt, kin_, kout_, fn) XCALLXM(tgt, kin_, kout_)
+#define XCALLDK(tgt, fn, m_) XCALLD(tgt, fn)
+#define XCALLMDK(tgt, fn, m_) XCALLMD(tgt, fn)
+#define XCALLXDK(tgt, kin_, kout_, fn, m_) XCALLXD(tgt, kin_, kout_, fn)
+#define XCALLXMDK(tgt, kin_, kout_, fn, m_) XCALLXMD(tgt, kin_, kout_, fn)
 #define XRC_LOCALS u32 x_hesp, x_hs, x_hold, x_ra_; double x_fret, x_fa[2];
 /* With double/SSE locals VC9 realigns the stack and addresses the parameters (c) through ebx (warning C4731):
  * XCALLX saves and restores the host ebx around the guest's, so that is safe. */
@@ -762,8 +850,10 @@ void xrc_count_reg(XrcCount *k);
 #define XRC_THUNKF(addr)
 #define XRC_PROLOGUE u8 *const xm_ = xrc_mem; r_esp = c->esp;
 #define XRC_ESP_OUT (r_esp)
-#define XRC_SPILL c->eax = r_eax; c->ecx = r_ecx; c->edx = r_edx; c->ebx = r_ebx; c->esp = r_esp; c->ebp = r_ebp; c->esi = r_esi; c->edi = r_edi;
-#define XRC_FILL r_eax = c->eax; r_ecx = c->ecx; r_edx = c->edx; r_ebx = c->ebx; r_esp = c->esp; r_ebp = c->ebp; r_esi = c->esi; r_edi = c->edi;
+#define XRC_SPILL XRC_SPILL_REGS c->esp = r_esp;
+#define XRC_FILL { if (XRC_FM_ & 1) r_eax = c->eax; if (XRC_FM_ & 2) r_ecx = c->ecx; if (XRC_FM_ & 4) r_edx = c->edx; \
+	if (XRC_FM_ & 8) r_ebx = c->ebx; if (XRC_FM_ & 0x10) r_ebp = c->ebp; if (XRC_FM_ & 0x20) r_esi = c->esi; if (XRC_FM_ & 0x40) r_edi = c->edi; \
+	r_esp = c->esp; }
 /* a guest call: push the original's return address (x_ra_), which the callee's ret pops (checked against c->eip) */
 extern volatile int xrc_gil_waiters;
 void xrc_preempt(void);
@@ -772,8 +862,9 @@ void xrc_preempt_n(XCtx *c);
  * away), xrc_preempt (thread-local counter, the clock) only every XRC_PREEMPT_N calls */
 #define XRC_PREEMPT_N 64u
 #define XRC_PREEMPT() { if (xrc_gil_waiters && ++c->pre_n >= XRC_PREEMPT_N) xrc_preempt_n(c); }
-/* XRC_EBP_CHECK (debug builds): a callee that comes back with a different ebp is logged (the ABI keeps ebp; MSVC's
- * SEH prolog helpers are the expected exceptions) */
+/* XRC_EBP_CHECK (debug builds; merged from the earlier private header): a callee that comes back with a different ebp is
+ * logged (the ABI keeps ebp; MSVC's SEH prolog helpers are the expected exceptions). Only on the calls that do not trim
+ * register syncs (XCALL, XCALLD); the trimmed XCALLDK family has XRC_ABI_CHECK instead. */
 #ifdef XRC_EBP_CHECK
 void xrc_ebp_bad(XCtx *c, u32 target, u32 was);
 #define XRC_EBPCK(t_) if (c->ebp != r_ebp) xrc_ebp_bad(c, (t_), r_ebp);
@@ -785,9 +876,11 @@ void xrc_ebp_bad(XCtx *c, u32 target, u32 was);
 #else
 /* an inline cache per call site (an indirect call: a vtable, a function pointer, a callback): the last target and
  * its function; a hit calls it as XCALLD does (no search by address, no call-stack record), a miss goes through
- * xrc_dispatch_ic (xrc_dispatch, then the cache is refilled). imp: an import's slot + 1 (xrc_imp_enter sets the
- * current-import globals its handler reads). Guest code runs under the GIL, so the two-word update is not torn. */
-typedef struct { u32 addr, imp; XFn fn; } XIc;
+ * xrc_dispatch_ic: the site's previous target (addr2: a polymorphic site's other class) is called the same way from
+ * there, anything else goes through xrc_dispatch, then the cache is refilled (the old entry moving to addr2). imp: an
+ * import's slot + 1 (xrc_imp_enter sets the current-import globals its handler reads). Guest code runs under the GIL,
+ * so the updates are not torn. */
+typedef struct { u32 addr, imp; XFn fn; u32 addr2, imp2; XFn fn2; } XIc;
 void xrc_dispatch_ic(XCtx *c, u32 target, XIc *ic);
 void xrc_imp_enter(u32 slot);
 extern volatile int xrc_gil_waiters;
@@ -828,15 +921,50 @@ extern XrcTStack xrc_tstacks[];
 #define XRC_DS_PUSH(t_) {
 #define XRC_DS_POP() }
 #endif
+/* XRC_ABI_CHECK (an experiment's build: XRC_PAGE_DEFS): after each direct call, whether the callee kept the
+ * registers the x86 ABI has it preserve (ebx esi edi ebp) -- each one that did not is reported once (xrc_rt.c) */
+#ifdef XRC_ABI_CHECK
+void xrc_abi_violation(u32 target, u32 ra, unsigned mask);
+#define XRC_ABI_NOTE(tgt) { unsigned m_ = (c->ebx != r_ebx) | (c->esi != r_esi) << 1 | (c->edi != r_edi) << 2 | (c->ebp != r_ebp) << 3; \
+	if (m_) xrc_abi_violation((tgt), x_ra_, m_); }
+#else
+#define XRC_ABI_NOTE(tgt)
+#endif
 #define XCALLD(tgt, fn) { r_esp -= 4; M32(r_esp) = x_ra_; XRC_SPILL XRC_PREEMPT() XRC_DS_PUSH(tgt) fn(c); XRC_DS_POP() \
-	if (c->eip != x_ra_) xrc_bad_return(c, (tgt)); XRC_EBPCK(tgt) XRC_FILL }
+	if (c->eip != x_ra_) xrc_bad_return(c, (tgt)); XRC_ABI_NOTE(tgt) XRC_EBPCK(tgt) XRC_FILL }
 /* the backward jump of a call-free loop with an atomic in it (xchg / lock / pause: a spin lock): the GIL to a waiting
  * thread, which may be the one holding the lock (without this the spinner keeps the GIL forever: a deadlock) */
 void xrc_spin_yield(void);
 #define XRC_SPIN_YIELD() { if (xrc_gil_waiters) xrc_spin_yield(); }
+/* an inlined call (xrc_translator x_inline_site) is still a point where a waiting thread may get the GIL, as the call
+ * was (a loop polling a flag through a getter that is now inlined would hold it for good otherwise); the registers
+ * go to XCtx first, as at a call, only when it does */
+#define XRC_INL_PREEMPT() { if (xrc_gil_waiters && ++c->pre_n >= XRC_PREEMPT_N) { XRC_SPILL xrc_preempt_n(c); } }
 #define XCALLXD(tgt, kin_, kout_, fn) { if ((kin_) >= 1) c->fa[0] = x_fa[0]; if ((kin_) >= 2) c->fa[1] = x_fa[1]; XCALLD(tgt, fn) if ((kout_) >= 1) x_fret = c->st0; }
 #define XCALLMD(tgt, fn) { XRC_XOUT_ XCALLD(tgt, fn) XRC_XIN_ }
 #define XCALLXMD(tgt, kin_, kout_, fn) { XRC_XOUT_ XCALLXD(tgt, kin_, kout_, fn) XRC_XIN_ }
+/* XCALLDK: a direct call whose callee keeps the callee-saved registers outside m_ (xrc x_abi_plan; bits 0 ebx,
+ * 1 esi, 2 edi, 3 ebp: the ones it may change) -- only eax ecx edx esp and those are read back from XCtx, the caller's
+ * locals hold the rest across the call (registers to the C compiler). m_ is a constant: the ifs fold away.
+ * -DXRC_NO_ABI_KEEP: every register read back (as XCALLD); XRC_ABI_CHECK: reported when a callee broke it. */
+#if defined(XRC_NO_ABI_KEEP) || defined(XRC_ABI_CHECK)
+#define XRC_FILL_K(m_) XRC_FILL
+#else
+#define XRC_FILL_K(m_) { if (XRC_FM_ & 1) r_eax = c->eax; if (XRC_FM_ & 2) r_ecx = c->ecx; if (XRC_FM_ & 4) r_edx = c->edx; r_esp = c->esp; \
+	if (((m_) & 1) && (XRC_FM_ & 8)) r_ebx = c->ebx; if (((m_) & 2) && (XRC_FM_ & 0x20)) r_esi = c->esi; \
+	if (((m_) & 4) && (XRC_FM_ & 0x40)) r_edi = c->edi; if (((m_) & 8) && (XRC_FM_ & 0x10)) r_ebp = c->ebp; }
+#endif
+#ifdef XRC_ABI_CHECK
+#define XRC_ABI_NOTE_K(tgt, m_) { unsigned m2_ = ((c->ebx != r_ebx) | (c->esi != r_esi) << 1 | (c->edi != r_edi) << 2 | (c->ebp != r_ebp) << 3) & ~(unsigned)(m_); \
+	if (m2_) xrc_abi_violation((tgt), x_ra_, m2_); }
+#else
+#define XRC_ABI_NOTE_K(tgt, m_)
+#endif
+#define XCALLDK(tgt, fn, m_) { r_esp -= 4; M32(r_esp) = x_ra_; XRC_SPILL XRC_PREEMPT() XRC_DS_PUSH(tgt) fn(c); XRC_DS_POP() \
+	if (c->eip != x_ra_) xrc_bad_return(c, (tgt)); XRC_ABI_NOTE_K(tgt, m_) XRC_FILL_K(m_) }
+#define XCALLXDK(tgt, kin_, kout_, fn, m_) { if ((kin_) >= 1) c->fa[0] = x_fa[0]; if ((kin_) >= 2) c->fa[1] = x_fa[1]; XCALLDK(tgt, fn, m_) if ((kout_) >= 1) x_fret = c->st0; }
+#define XCALLMDK(tgt, fn, m_) { XRC_XOUT_ XCALLDK(tgt, fn, m_) XRC_XIN_ }
+#define XCALLXMDK(tgt, kin_, kout_, fn, m_) { XRC_XOUT_ XCALLXDK(tgt, kin_, kout_, fn, m_) XRC_XIN_ }
 #define XRC_FRET(v) (c->st0 = (double)(v))
 /* x_ra_: the return address the next call pushes (set by the translation just before it: a constant, the original's) */
 #define XRC_LOCALS u32 x_ra_; double x_fret, x_fa[2];

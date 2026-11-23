@@ -1,0 +1,95 @@
+diff --git a/src/xrc_fp.odin b/src/xrc_fp.odin
+index 8a10ff3..27e9eca 100644
+--- a/src/xrc_fp.odin
++++ b/src/xrc_fp.odin
+@@ -39,6 +39,7 @@ X87_Flow :: struct {
+ 	ok:     bool,
+ 	reason: string,
+ 	guessed: [dynamic]u32, // calls whose float result was guessed (x87_guess_result), in the order met
++	unres:   bool, // a computed tail call (jmp reg / [mem]): its result, and so ours, unknown
+ }
+ 
+ x87_memo: map[u32]X87_Eff
+@@ -48,6 +49,9 @@ x87_named_loaded: bool
+ // CRT helpers taking x87 arguments that leave the values below them alone (MSVC keeps values live across them:
+ // fld a; fld b; call _ftol2_sse -> a stays)
+ x87_deep: map[u32]bool
++// > 0 while x87_effect solves a callee: the solved-callee relaxation (x87_solve's `deep`) applies only to the
++// function being translated, or a callee could solve at a deeper entry with a phantom value kept across its calls
++x87_deriving: int
+ 
+ // CRT helpers that take x87 arguments, by name (ghidra/function_map.csv)
+ x87_load_named :: proc() {
+@@ -85,7 +89,15 @@ x87_load_named :: proc() {
+ 		case n == "__cintrindisp1" || n == "__ctrandisp1": x87_named[a] = {1, 1, true, false, false}
+ 		case n == "__CIpow" || n == "__CIatan2" || n == "__CIfmod": x87_named[a] = {2, 1, true, false, false}
+ 		case strings.has_prefix(n, "__CI"): x87_named[a] = {1, 1, true, false, false}
+-		case strings.contains(n, "ftol"): x87_named[a] = {1, 0, true, false, false}
++		// the plain CRT math functions (or a `jmp [iat]` thunk to msvcr100's): doubles on the stack, the result in st(0)
++		case n == "_floor" || n == "_ceil" || n == "_sqrt" || n == "_pow" || n == "_fmod" || n == "_sin" || n == "_cos" ||
++		     n == "_tan" || n == "_atan" || n == "_atan2" || n == "_exp" || n == "_log" || n == "_log10" || n == "_fabs" ||
++		     n == "_acos" || n == "_asin" || n == "_ldexp" || n == "_sinh" || n == "_cosh" || n == "_tanh" ||
++		     n == "__hypot" || n == "_atof" || n == "_modf" || n == "_frexp":
++			x87_named[a] = {0, 1, true, false, false}
++		case strings.contains(n, "ftol"): // takes st(0) only: MSVC keeps values below it live (fld a; fld b; call _ftol2_sse)
++			x87_named[a] = {1, 0, true, false, false}
++			x87_deep[a] = true
+ 		}
+ 	}
+ }
+@@ -140,6 +152,8 @@ x87_effect :: proc(t: u32) -> X87_Eff {
+ 			if pure {
+ 				res = {0, 0, true, true, false}
+ 			} else if bad == 0 {
++				x87_deriving += 1
++				defer x87_deriving -= 1
+ 				for e in 0 ..= 2 {
+ 					fl := x87_solve(ins[:], t, sz, e)
+ 					if fl.ok {
+@@ -147,7 +161,7 @@ x87_effect :: proc(t: u32) -> X87_Eff {
+ 						// its result decided by guesses (a float returned from a virtual call it makes, maybe after
+ 						// x87 code of its own): flexible for the caller. In the portable runtime c->st0 passes
+ 						// through to the caller either way.
+-						res.flex = e == 0 && res.kout == 0 && len(fl.guessed) > 0
++						res.flex = e == 0 && res.kout == 0 && (len(fl.guessed) > 0 || (fl.unres && fl.ret < 0))
+ 						break
+ 					}
+ 				}
+@@ -292,7 +306,11 @@ x87_flow :: proc(ins: []Rx_Ins, a, size: u32, entry: int, force: ^map[u32]int) -
+ 						e.kout = v
+ 					} else if v2, ok2 := force[rx_rel_target(it, 0) ~ X87_BY_TARGET]; ok2 {
+ 						e.kout = v2
++					} else {
++						e.kout = x87_guess_result(ins, w.i)
+ 					}
++				} else {
++					e.kout = x87_guess_result(ins, w.i) // a forwarder's result: what this caller does with st(0) next
+ 				}
+ 				append(&fl.guessed, it.addr)
+ 			}
+@@ -302,6 +320,7 @@ x87_flow :: proc(ins: []Rx_Ins, a, size: u32, entry: int, force: ^map[u32]int) -
+ 				if m == .JMP {
+ 					e = {d, -1, true, false, false}
+ 					pending = true
++					fl.unres = true
+ 				} else if force != nil && it.addr in force {
+ 					e = {d, force[it.addr], true, false, false}
+ 					append(&fl.guessed, it.addr)
+@@ -314,7 +333,16 @@ x87_flow :: proc(ins: []Rx_Ins, a, size: u32, entry: int, force: ^map[u32]int) -
+ 			if e.transparent {
+ 				nd = d
+ 			} else {
+-				deep := m == .CALL && it.inst.ops[0].kind == .RELATIVE && rx_rel_target(it, 0) in x87_deep && d > e.kin
++				// values below a call's arguments stay live across it when the callee is a CRT helper known to leave
++				// them (x87_deep), or one whose x87 effect was solved here: x87_solve takes the smallest entry depth that
++				// works, so it never reads below its kin arguments (a getter `fld [ecx+n]; ret` with the caller's sum
++				// kept in st0). Not for guessed (flex) results.
++				deep := false
++				if m == .CALL && it.inst.ops[0].kind == .RELATIVE && d > e.kin {
++					tgt := rx_rel_target(it, 0)
++					solved, in_memo := x87_memo[tgt]
++					deep = tgt in x87_deep || (x87_deriving == 0 && in_memo && solved.known && !solved.flex && !solved.transparent)
++				}
+ 				if d != e.kin && !deep {return bad(&fl, d > e.kin ? "x87 live across call" : "x87 args", it.addr)}
+ 				if e.kin > 2 {return bad(&fl, "x87 args", it.addr)}
+ 				nd = d - e.kin + e.kout

@@ -67,9 +67,18 @@ static u8 *reserve_guest(void) {
 #ifdef _WIN32
 	/* committed lazily by the OS (pages are only backed once touched); with MEM_WRITE_WATCH unless XRC_NO_WRITE_WATCH */
 	u8 *p = 0;
-	if (!getenv("XRC_NO_WRITE_WATCH")) p = (u8 *)VirtualAlloc(0, n, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE);
+#ifdef XRC_FIXED_BASE /* the new xrc.h makes XM a constant host address (pages bake it into every access): reserve exactly there */
+	void *want = (void *)(uintptr_t)XRC_FIXED_BASE;
+#else
+	void *want = 0;
+#endif
+	if (!getenv("XRC_NO_WRITE_WATCH")) p = (u8 *)VirtualAlloc(want, n, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE);
 	if (p) { xrc_write_watch = 1; return p; }
-	return (u8 *)VirtualAlloc(0, n, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	p = (u8 *)VirtualAlloc(want, n, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+#ifdef XRC_FIXED_BASE
+	if (!p) fprintf(stderr, "xrc: cannot reserve guest memory at fixed base %p (the exe must be linked above it: --image-base 0x200000000)\n", want);
+#endif
+	return p;
 #else
 	/* Linux: on huge pages (fewer TLB misses over the game's scattered 4 GB). 1 GB pages, else 2 MB ones, when the
 	 * system has a pool of them for all of it (/sys/kernel/mm/hugepages: reserved at the mmap, so a short pool fails
@@ -636,7 +645,7 @@ static void protect_image(void) {
 	SetThreadStackGuarantee(&guarantee); /* (room to report a stack overflow of the main thread) */
 	/* XRC_NULL_GUARD=1: guest page 0 not accessible, as in the original process, so a null-pointer access or one of
 	 * the game's asserts (a write to address 0) stops the run with its guest stack (win_report) instead of passing
-	 * unseen. Needs the pages with fs: rebased (tools/fsfix.py): the SEH chain head (fs:[0]) was at address 0. */
+	 * unseen. Needs fs: translated as XRC_SEG_FS + ea (-DXRC_SEG_FS=xrc_teb): the SEH chain head (fs:[0]) was at address 0. */
 	if (getenv("XRC_NULL_GUARD") && atoi(getenv("XRC_NULL_GUARD"))) {
 		DWORD old;
 		if (VirtualProtect(xrc_mem, 0x1000, PAGE_NOACCESS, &old)) fprintf(stderr, "xrc: guest page 0 guarded (XRC_NULL_GUARD)\n");
@@ -756,6 +765,10 @@ static void setup_thread(void) {
 }
 
 /* ------------------------------------------------------------------------------------------------ dispatch */
+
+/* tables of the `fast` / `wrapped` rows of overrides.tsv (ovr_math.c, ovr_hooks.c) */
+extern const XrcManual xrc_manual_math[], xrc_manual_hooks[];
+extern const unsigned xrc_manual_math_n, xrc_manual_hooks_n;
 
 /* the hand-written replacements; they take precedence over translations (build_htab enters them last) */
 static const XrcManual **manual;
@@ -1079,9 +1092,44 @@ void xrc_imp_enter(u32 i) {
  * whose import XCALL's xrc_imp_enter has just named (xrc_cur_slot) */
 static XRC_CC void imp_tramp(XCtx *c) { (imps[xrc_cur_slot].wrap ? imps[xrc_cur_slot].wrap : imps[xrc_cur_slot].fn)(c); }
 #endif
+/* indirect-call-site profile for the translator's devirtualization (XRC_SITE_FILE=FILE, XRC_SITE_DELAY=s, XRC_SITE_SECS=s):
+ * every indirect call goes through here with the inline cache off; "calls return-address target" lines (decimal, hex, hex) are written once. Under the GIL: no locking. */
+typedef struct { u32 ra, t, n; } SiteRow;
+static SiteRow *site_tab; static int site_on = -1, site_done; static unsigned long long site_t0, site_t1;
+#define SITE_CAP (1u << 21)
+static void site_dump(void) {
+	const char *fn = getenv("XRC_SITE_FILE"); FILE *f = fopen(fn, "w"); unsigned i, n = 0;
+	if (!f) return;
+	for (i = 0; i < SITE_CAP; i++) if (site_tab[i].n) { fprintf(f, "%u %08x %08x\n", site_tab[i].n, site_tab[i].ra, site_tab[i].t); n++; }
+	fclose(f); fprintf(stderr, "xrc: site profile: %u (site,target) pairs -> %s\n", n, fn);
+}
+static void site_count(u32 ra, u32 t) {
+	unsigned long long now = GetTickCount64();
+	unsigned h;
+	if (site_done || now < site_t0) return;
+	if (now >= site_t1) { site_done = 1; site_dump(); return; }
+	h = (ra * 2654435761u ^ t * 40503u) & (SITE_CAP - 1);
+	for (;;) {
+		SiteRow *r = &site_tab[h];
+		if (!r->n) { r->ra = ra; r->t = t; r->n = 1; return; }
+		if (r->ra == ra && r->t == t) { r->n++; return; }
+		h = (h + 1) & (SITE_CAP - 1);
+	}
+}
 void xrc_dispatch_ic(XCtx *c, u32 t, XIc *ic) {
 	xrc_ic_misses++;
+	if (site_on < 0) {
+		site_on = getenv("XRC_SITE_FILE") != 0;
+		if (site_on) {
+			const char *d = getenv("XRC_SITE_DELAY"), *sc = getenv("XRC_SITE_SECS");
+			site_tab = (SiteRow *)calloc(SITE_CAP, sizeof(SiteRow));
+			site_t0 = GetTickCount64() + (unsigned long long)((d ? atof(d) : 0) * 1000); site_t1 = site_t0 + (unsigned long long)((sc ? atof(sc) : 60) * 1000);
+			ic_off = 1; fprintf(stderr, "xrc: site profile on (XRC_SITE_FILE)\n");
+		}
+	}
+	if (site_on && site_tab) site_count(M32(c->esp), t);
 	xrc_dispatch(c, t);
+	if (site_on) return;
 	if (ic_off) {
 		if (ic_off > 0) return;
 		ic_off = getenv("XRC_NO_IC") || xrc_tool_env("XRC_TRACE_CALLS") || xrc_tool_env("XRC_TRACE_IMPORTS") || xrc_tool_env("XRC_IMPORT_TIME") ||
@@ -1821,6 +1869,8 @@ int main(int argc, char **argv) {
 	add_manual(xrc_manual_miles, xrc_manual_miles_n);
 	add_manual(xrc_manual_dbg, xrc_manual_dbg_n); /* ovr_debug.c: the debug camera (XRC_FREECAM) */
 	add_manual(xrc_manual_frame, xrc_manual_frame_n); /* ovr_frame.c: frame limiter wait, clamp counter */
+	add_manual(xrc_manual_math, xrc_manual_math_n); /* ovr_math.c, the 20 native math `fast` rows (were renamed xf_ symbols) */
+	add_manual(xrc_manual_hooks, xrc_manual_hooks_n); /* ovr_hooks.c, the shadow hold wrapper and the other `fast` rows */
 #endif
 	build_htab();
 	if (!load_exe(exe)) return 2;

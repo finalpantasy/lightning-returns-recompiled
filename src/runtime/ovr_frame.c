@@ -10,7 +10,7 @@
  * stub's answer is constant: anything else, or a device object, runs the translation), caches the QPC frequency as the
  * original does, waits for entry + freq/50 ONCE (a high-resolution waitable timer with the GIL released, then a spin
  * under XRC_OVR_FRAME_SPIN_US, default 300 us), and returns with eax:edx = freq/50 like the original's last compare.
- * XRC_OVR_FRAME=0: the original spin. Page_00ac's direct calls need ovr_frame_calls.h (-include).
+ * XRC_OVR_FRAME=0: the original spin.
  *
  * 00ac33b0 FrameClock::GetQuantizedDelta (thiscall, ret 4: dt -> *arg). XRC_CLAMP_LOG=1 counts, per 600 TickFrame
  * frames, those whose raw dt is above the clamp TickFrame applies (20020 units = 66.7 ms at the default 14.985 fps)

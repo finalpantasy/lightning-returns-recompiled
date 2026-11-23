@@ -51,3 +51,6 @@ venv/
 !docs/screenshots/*.png
 # local staging notes
 STAGING_NOTES.md
+# build_all.py scratch: translator, pages, objects, downloaded toolchain
+build/_work/
+build/_deps/

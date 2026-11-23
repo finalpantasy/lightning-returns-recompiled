@@ -8,11 +8,10 @@
  *   00b09d50 (a quantized AABB-tree query loop, hand-written: SSE2 integer compares), 00b8edb0 (a 3-row dequantize with table gathers,
  *   generated) (third batch, math3)
  *
- * They are not entered through the dispatcher's manual table: the translated callers call xf_<addr> directly, so the
- * symbols themselves are replaced. tools/ovr_math/build_math.sh recompiles the pages that define these functions
- * with the definitions renamed to xrc_orig_<addr> (build/win/math_src, build/win/obj_math); the xf_<addr> defined
- * here are then what every caller, the dispatch table and the inline caches reach. Without that step (a link of the
- * stock objects) this file must not be linked.
+ * They are `fast` rows in translator/lr/overrides.tsv (translator: ps4star's XRC, Unlicense). The generated pages call the
+ * xo_<addr> defined here directly (XCALLMDK / XCALLDK) and keep the translation as xf_<addr>, the reference these bodies are
+ * checked against and fall back to. The dispatcher maps the addresses to xo_<addr> too (xrc_manual_math at the end of this
+ * file, registered in xrc_rt.c), so indirect calls reach them as before. No page renaming is needed.
  *
  * The straight-line SSE bodies (ovr_math_gen.inc) are generated one statement per guest instruction from the
  * translator's own page source (tools/ovr_math/gen_ovr_math.py): the same operations in the same order, packed
@@ -63,27 +62,27 @@ static inline void st64(void *p, u64 v) { memcpy(p, &v, 8); }
 
 #include "ovr_math_gen.inc"
 
-/* the translations, under the names tools/ovr_math/build_math.sh gives them */
-void XRC_CC xrc_orig_00408210(XCtx *c);
-void XRC_CC xrc_orig_0040acb0(XCtx *c);
-void XRC_CC xrc_orig_0040ab00(XCtx *c);
-void XRC_CC xrc_orig_0040b1e0(XCtx *c);
-void XRC_CC xrc_orig_00416140(XCtx *c);
-void XRC_CC xrc_orig_004164f0(XCtx *c);
-void XRC_CC xrc_orig_00416020(XCtx *c);
-void XRC_CC xrc_orig_00416250(XCtx *c);
-void XRC_CC xrc_orig_00cf1a20(XCtx *c);
-void XRC_CC xrc_orig_005a44e0(XCtx *c);
-void XRC_CC xrc_orig_004bb0b0(XCtx *c);
-void XRC_CC xrc_orig_004bada0(XCtx *c);
-void XRC_CC xrc_orig_00437270(XCtx *c);
-void XRC_CC xrc_orig_00408320(XCtx *c);
-void XRC_CC xrc_orig_004bb1c0(XCtx *c);
-void XRC_CC xrc_orig_00416a30(XCtx *c);
-void XRC_CC xrc_orig_00aac130(XCtx *c);
-void XRC_CC xrc_orig_00b09d50(XCtx *c);
-void XRC_CC xrc_orig_00b8edb0(XCtx *c);
-void XRC_CC xrc_orig_0040abc0(XCtx *c);
+/* the translations (the reference the pages keep) */
+void XRC_CC xf_00408210(XCtx *c);
+void XRC_CC xf_0040acb0(XCtx *c);
+void XRC_CC xf_0040ab00(XCtx *c);
+void XRC_CC xf_0040b1e0(XCtx *c);
+void XRC_CC xf_00416140(XCtx *c);
+void XRC_CC xf_004164f0(XCtx *c);
+void XRC_CC xf_00416020(XCtx *c);
+void XRC_CC xf_00416250(XCtx *c);
+void XRC_CC xf_00cf1a20(XCtx *c);
+void XRC_CC xf_005a44e0(XCtx *c);
+void XRC_CC xf_004bb0b0(XCtx *c);
+void XRC_CC xf_004bada0(XCtx *c);
+void XRC_CC xf_00437270(XCtx *c);
+void XRC_CC xf_00408320(XCtx *c);
+void XRC_CC xf_004bb1c0(XCtx *c);
+void XRC_CC xf_00416a30(XCtx *c);
+void XRC_CC xf_00aac130(XCtx *c);
+void XRC_CC xf_00b09d50(XCtx *c);
+void XRC_CC xf_00b8edb0(XCtx *c);
+void XRC_CC xf_0040abc0(XCtx *c);
 
 /* 0040acb0 Multiply: thiscall (out, rhs), ret 8. out.row[r] = this.TransformVector4(rhs.row[r]) for r = 3, 2, 1, 0 (in that
  * order, each into a temporary), then the four results are copied to out: the temporaries and the arguments of the
@@ -119,7 +118,7 @@ static void XRC_CC gen_Multiply(XCtx *c) {
 static void XRC_CC gen_aulldiv(XCtx *c) {
 	u32 sp = c->esp;
 	u64 n = (u64)FRAME_ARG(sp, 1) | (u64)FRAME_ARG(sp, 2) << 32, d = (u64)FRAME_ARG(sp, 3) | (u64)FRAME_ARG(sp, 4) << 32, q;
-	if (!d) { xrc_orig_00cf1a20(c); return; }
+	if (!d) { xf_00cf1a20(c); return; }
 	q = n / d;
 	c->eax = (u32)q;
 	c->edx = (u32)(q >> 32);
@@ -189,7 +188,7 @@ static void XRC_CC gen_Fn00b09d50(XCtx *c) {
 static void XRC_CC gen_ToPackedColor8888(XCtx *c) {
 	u8 *const xm = XM;
 	u32 p = c->ecx, i0, i1, i2, i3, e;
-	if (__builtin_expect((((u32)(u16)c->fcw | 0xc00u) >> 10) != 3, 0)) { xrc_orig_0040abc0(c); return; }
+	if (__builtin_expect((((u32)(u16)c->fcw | 0xc00u) >> 10) != 3, 0)) { xf_0040abc0(c); return; }
 	i0 = (u32)_mm_cvttss_si64(_mm_load_ss((const float *)(xm + p)));
 	i1 = (u32)_mm_cvttss_si64(_mm_load_ss((const float *)(xm + (u32)(p + 4u))));
 	i2 = (u32)_mm_cvttss_si64(_mm_load_ss((const float *)(xm + (u32)(p + 8u))));
@@ -244,26 +243,26 @@ static void su_color(XCtx *c, u32 base, unsigned long long *rng, unsigned it);
 
 #define XM6 0x3f
 static Spec specs[] = {
-	{0x00408210u, "Matrix4x4::TransformVector4", gen_TransformVector4, xrc_orig_00408210, 1, rg_out4, su_tv, 0, 0xff},
-	{0x0040acb0u, "Matrix4x4::Multiply", gen_Multiply, xrc_orig_0040acb0, 1, rg_out16, su_mul, 0, 0x01 | 0x3e},
-	{0x0040ab00u, "Vector4::Normalize", gen_Normalize, xrc_orig_0040ab00, 1, rg_out4, su_norm, 0, 0xff},
-	{0x0040b1e0u, "Matrix4x4 copy", gen_Copy4x4, xrc_orig_0040b1e0, 1, rg_out16, su_copy, 0, 0xff},
-	{0x00416140u, "Vector4 op (00416140)", gen_Fn00416140, xrc_orig_00416140, 1, rg_out4, su_2vec, 0, 0xff},
-	{0x004164f0u, "Matrix from quaternion (004164f0)", gen_Fn004164f0, xrc_orig_004164f0, 1, rg_out16, su_in4, 0, 0xff},
-	{0x00416020u, "sincos x4 (00416020)", gen_SinCos4, xrc_orig_00416020, 2, rg_sincos, su_sincos, 0, 0xff},
-	{0x00416250u, "Vector4 op (00416250)", gen_Fn00416250, xrc_orig_00416250, 1, rg_out4, su_in4, 0, 0xff},
-	{0x00cf1a20u, "_aulldiv", gen_aulldiv, xrc_orig_00cf1a20, 0, rg_none, su_div, 1, 0},
-	{0x005a44e0u, "Matrix4x4::Transpose", gen_Transpose, xrc_orig_005a44e0, 1, rg_out16, su_copy, 0, 0xff},
-	{0x004bb0b0u, "Aabb::ExpandByPoint", gen_ExpandByPoint, xrc_orig_004bb0b0, 1, rg_out32, su_aabb, 0, 0xff},
-	{0x004bada0u, "Matrix4x4::TransformPoint", gen_TransformPoint, xrc_orig_004bada0, 1, rg_out4, su_tv, 0, 0xff},
-	{0x00437270u, "Matrix4x4::MakeTranslation", gen_MakeTranslation, xrc_orig_00437270, 1, rg_out16, su_mk, 0, 0xff},
-	{0x00408320u, "Matrix4x4::Inverse", gen_Inverse, xrc_orig_00408320, 1, rg_out16, su_copy, 0, 0xff},
-	{0x004bb1c0u, "Aabb::TransformByMatrix", gen_TransformByMatrix, xrc_orig_004bb1c0, 1, rg_out32, su_tbm, 0, 0xff},
-	{0x00416a30u, "JointExpression::GetRotationQuat", gen_GetRotationQuat, xrc_orig_00416a30, 1, rg_out4, su_grq, 0, 0xff},
-	{0x00aac130u, "Transform::ComposeLocalToWorld", gen_ComposeLocalToWorld, xrc_orig_00aac130, 1, rg_compose, su_compose, 0, 0xff},
-	{0x00b09d50u, "AabbTree query (00b09d50)", gen_Fn00b09d50, xrc_orig_00b09d50, 0, rg_none, su_b09d50, 3, 0x7f, 0x5115780u, 0x40u},
-	{0x00b8edb0u, "Dequantize 3 rows (00b8edb0)", gen_Fn00b8edb0, xrc_orig_00b8edb0, 1, rg_out48, su_b8edb0, 3, 0xff},
-	{0x0040abc0u, "Vector4::ToPackedColor8888", gen_ToPackedColor8888, xrc_orig_0040abc0, 0, rg_none, su_color, 1, 0},
+	{0x00408210u, "Matrix4x4::TransformVector4", gen_TransformVector4, xf_00408210, 1, rg_out4, su_tv, 0, 0xff},
+	{0x0040acb0u, "Matrix4x4::Multiply", gen_Multiply, xf_0040acb0, 1, rg_out16, su_mul, 0, 0x01 | 0x3e},
+	{0x0040ab00u, "Vector4::Normalize", gen_Normalize, xf_0040ab00, 1, rg_out4, su_norm, 0, 0xff},
+	{0x0040b1e0u, "Matrix4x4 copy", gen_Copy4x4, xf_0040b1e0, 1, rg_out16, su_copy, 0, 0xff},
+	{0x00416140u, "Vector4 op (00416140)", gen_Fn00416140, xf_00416140, 1, rg_out4, su_2vec, 0, 0xff},
+	{0x004164f0u, "Matrix from quaternion (004164f0)", gen_Fn004164f0, xf_004164f0, 1, rg_out16, su_in4, 0, 0xff},
+	{0x00416020u, "sincos x4 (00416020)", gen_SinCos4, xf_00416020, 2, rg_sincos, su_sincos, 0, 0xff},
+	{0x00416250u, "Vector4 op (00416250)", gen_Fn00416250, xf_00416250, 1, rg_out4, su_in4, 0, 0xff},
+	{0x00cf1a20u, "_aulldiv", gen_aulldiv, xf_00cf1a20, 0, rg_none, su_div, 1, 0},
+	{0x005a44e0u, "Matrix4x4::Transpose", gen_Transpose, xf_005a44e0, 1, rg_out16, su_copy, 0, 0xff},
+	{0x004bb0b0u, "Aabb::ExpandByPoint", gen_ExpandByPoint, xf_004bb0b0, 1, rg_out32, su_aabb, 0, 0xff},
+	{0x004bada0u, "Matrix4x4::TransformPoint", gen_TransformPoint, xf_004bada0, 1, rg_out4, su_tv, 0, 0xff},
+	{0x00437270u, "Matrix4x4::MakeTranslation", gen_MakeTranslation, xf_00437270, 1, rg_out16, su_mk, 0, 0xff},
+	{0x00408320u, "Matrix4x4::Inverse", gen_Inverse, xf_00408320, 1, rg_out16, su_copy, 0, 0xff},
+	{0x004bb1c0u, "Aabb::TransformByMatrix", gen_TransformByMatrix, xf_004bb1c0, 1, rg_out32, su_tbm, 0, 0xff},
+	{0x00416a30u, "JointExpression::GetRotationQuat", gen_GetRotationQuat, xf_00416a30, 1, rg_out4, su_grq, 0, 0xff},
+	{0x00aac130u, "Transform::ComposeLocalToWorld", gen_ComposeLocalToWorld, xf_00aac130, 1, rg_compose, su_compose, 0, 0xff},
+	{0x00b09d50u, "AabbTree query (00b09d50)", gen_Fn00b09d50, xf_00b09d50, 0, rg_none, su_b09d50, 3, 0x7f, 0x5115780u, 0x40u},
+	{0x00b8edb0u, "Dequantize 3 rows (00b8edb0)", gen_Fn00b8edb0, xf_00b8edb0, 1, rg_out48, su_b8edb0, 3, 0xff},
+	{0x0040abc0u, "Vector4::ToPackedColor8888", gen_ToPackedColor8888, xf_0040abc0, 0, rg_none, su_color, 1, 0},
 };
 enum { S_TV, S_MUL, S_NORM, S_COPY, S_F140, S_F4F0, S_SINCOS, S_F250, S_DIV, S_TRANSPOSE, S_EXPAND, S_TPOINT, S_MKTRANS, S_INVERSE, S_TBM, S_GRQ, S_COMPOSE, S_B09D50, S_B8EDB0, S_COLOR };
 
@@ -665,7 +664,7 @@ static void slow(Spec *s, XCtx *c) {
 }
 
 /* the symbols every caller reaches */
-#define OVR(addr_, idx_, gen_) void XRC_CC xf_##addr_(XCtx *c) { if (__builtin_expect(g_mode == 1, 1)) gen_(c); else if (g_mode == 0) xrc_orig_##addr_(c); else slow(&specs[idx_], c); }
+#define OVR(addr_, idx_, gen_) void XRC_CC xo_##addr_(XCtx *c) { if (__builtin_expect(g_mode == 1, 1)) gen_(c); else if (g_mode == 0) xf_##addr_(c); else slow(&specs[idx_], c); }
 OVR(00408210, S_TV, gen_TransformVector4)
 OVR(0040acb0, S_MUL, gen_Multiply)
 OVR(0040ab00, S_NORM, gen_Normalize)
@@ -686,3 +685,16 @@ OVR(00aac130, S_COMPOSE, gen_ComposeLocalToWorld)
 OVR(00b09d50, S_B09D50, gen_Fn00b09d50)
 OVR(00b8edb0, S_B8EDB0, gen_Fn00b8edb0)
 OVR(0040abc0, S_COLOR, gen_ToPackedColor8888)
+
+/* the dispatcher's view of the same overrides (indirect calls, inline caches): the xo_ entries */
+#define MAN(addr_, nm_) {0x##addr_##u, xo_##addr_, nm_}
+const XrcManual xrc_manual_math[] = {
+	MAN(00408210, "Matrix4x4::TransformVector4"), MAN(0040acb0, "Matrix4x4::Multiply"), MAN(0040ab00, "Vector4::Normalize"),
+	MAN(0040b1e0, "Matrix4x4 copy"), MAN(00416140, "Vector4 op"), MAN(004164f0, "Matrix from quaternion"),
+	MAN(00416020, "sincos x4"), MAN(00416250, "Vector4 op"), MAN(00cf1a20, "_aulldiv"), MAN(005a44e0, "Matrix4x4::Transpose"),
+	MAN(004bb0b0, "Aabb::ExpandByPoint"), MAN(004bada0, "Matrix4x4::TransformPoint"), MAN(00437270, "Matrix4x4::MakeTranslation"),
+	MAN(00408320, "Matrix4x4::Inverse"), MAN(004bb1c0, "Aabb::TransformByMatrix"), MAN(00416a30, "JointExpression::GetRotationQuat"),
+	MAN(00aac130, "Transform::ComposeLocalToWorld"), MAN(00b09d50, "AabbTree query"), MAN(00b8edb0, "Dequantize 3 rows"),
+	MAN(0040abc0, "Vector4::ToPackedColor8888"),
+};
+const unsigned xrc_manual_math_n = sizeof xrc_manual_math / sizeof xrc_manual_math[0];
