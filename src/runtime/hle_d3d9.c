@@ -715,6 +715,7 @@ static void v_Present(XCtx *c) {
 		fprintf(stderr, "xrc: size: Present returns D3DERR_DEVICELOST (display change)\n");
 		RET(0x88760868u, 5);
 	}
+	{ extern void xrc_hifps_pre_present(void); xrc_hifps_pre_present(); } /* (hifps1: XRC_FPS_CAP's wait, just before the present) */
 	if (d3_be) d3_be->present();
 	present();
 	RET(D3D_OK, 5);
@@ -990,7 +991,7 @@ static void v_GetNPatchMode(XCtx *c) { c->st0 = 0.0; RET(0, 1); }
 static void v_ValidateDevice(XCtx *c) { if (A(1)) M32(A(1)) = 1; RET(D3D_OK, 2); }
 static void v_EndStateBlock(XCtx *c) { M32(A(1)) = OBJ(new_obj(K_SB, &if_sb)).guest; RET(D3D_OK, 2); }
 static void v_CreateStateBlock(XCtx *c) { M32(A(2)) = OBJ(new_obj(K_SB, &if_sb)).guest; RET(D3D_OK, 3); }
-static void v_Present_sw(XCtx *c) { if (d3_be) d3_be->present(); present(); RET(D3D_OK, 6); }
+static void v_Present_sw(XCtx *c) { { extern void xrc_hifps_pre_present(void); xrc_hifps_pre_present(); } if (d3_be) d3_be->present(); present(); RET(D3D_OK, 6); }
 
 /* shaders and declarations keep a copy of their bytecode / elements */
 static u32 shader_len(u32 p) {

@@ -70,6 +70,10 @@ static const Opt opts[] = {
 	 "The game's own texture smoothing. Texture sharpness (below) overrides it for surfaces seen at an angle unless that is set to Game's own." ADV_STD_TAIL},
 	{"Frame rate", "XRC_CFG_Graphics_FrameRate", 0, {"", "Variable", "Stability"}, {GAME_SAVED, "Unlocked to 60 fps", "Locked 30 fps"},
 	 "Unlocked runs as fast as your PC allows, up to 60 fps. Locked 30 fps holds a steady 30, which can feel smoother on a slow PC. Needs a restart."},
+	{"Frame rate limit", "XRC_FPS_CAP", 0, {"", "120", "144", "165", "180", "240", "unlocked"}, {"60 (original)", "120 fps", "144 fps", "165 fps", "180 fps", "240 fps", "Unlocked"},
+	 "Caps the game at this many frames per second; the game's speed stays right at any rate. 60 is the original pacing. Needs Frame rate = Unlocked to 60 fps (above), and a restart. Higher rates need a PC that can draw them."},
+	{"VSync", "XRC_FPS_VSYNC", 0, {"", "1"}, {"Off", "On"},
+	 "Only matters with a frame rate limit above 60. Off draws without waiting for the display (best with a variable-refresh monitor); On waits for the display when the limit is at or below its refresh rate. Needs a restart."},
 	{"Confirm button", "XRC_CFG_Control_ConfirmButtonLayout", 0, {"", "Normal", "Opposite"}, {GAME_SAVED, "Normal: A confirms", "Opposite: B confirms"},
 	 "Which pad button confirms in the game's menus. Normal: A confirms and B cancels. Opposite: B confirms and A cancels, as in the Japanese release. Needs a restart."},
 	{"Anti-aliasing", "XRC_FXAA", 1, {"0", "2", "4", "8", "16"}, {"Off", "FXAA low", "FXAA medium", "FXAA high", "SMAA"},
@@ -545,7 +549,7 @@ static void text_wrap(Sz *s, float x, float y, float maxw, int lines, unsigned c
 enum { IT_HDR, IT_OPT, IT_RESTART, IT_QUIT, IT_CLOSE, IT_RESET };
 typedef struct { int kind, opt; const char *text, *note; } Item;
 static const struct { const char *title, *note; const char *keys[9]; } sections[] = {
-	{"DISPLAY", 0, {"XRC_WINDOW", "XRC_CFG_Graphics_Resolution", "XRC_CFG_Graphics_Scaling", "XRC_CFG_Graphics_FrameRate"}},
+	{"DISPLAY", 0, {"XRC_WINDOW", "XRC_CFG_Graphics_Resolution", "XRC_CFG_Graphics_Scaling", "XRC_CFG_Graphics_FrameRate", "XRC_FPS_CAP", "XRC_FPS_VSYNC"}},
 	{"GRAPHICS", "apply on restart", {"XRC_CFG_Graphics_ColorCorrection", "XRC_CFG_Graphics_Glare", "XRC_CFG_Graphics_DepthOfField",
 	                                  "XRC_CFG_Graphics_Shadowing", "XRC_CFG_Graphics_Lighting", "XRC_CFG_Graphics_TextureFiltering"}},
 	{"ENHANCEMENTS", "live", {"XRC_FXAA", "XRC_CAS", "XRC_DOWNSCALE", "XRC_DEBAND", "XRC_ANISO", "XRC_TEX_HD", "XRC_TEX_UI", "XRC_MOVIE_HD", "XRC_SHADOW_HOLD"}},

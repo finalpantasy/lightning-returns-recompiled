@@ -4793,6 +4793,11 @@ static void make_swapchain(void) {
 		}
 		ci.presentMode = fifo || !immediate ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR;
 		if (immediate && xrc_tool_env("XRC_UNLOCKED")) ci.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR; /* (a benchmark: ovr_game.c) */
+		{ /* hifps1: XRC_FPS_CAP above the display's refresh (or unlocked): FIFO would hold the game at the refresh, so
+		   * IMMEDIATE (vsync off; with VRR the display follows the frames). A cap at or below the refresh keeps FIFO. */
+			extern int xrc_hifps_want_immediate(void);
+			if (immediate && xrc_hifps_want_immediate()) ci.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+		}
 		{ /* XRC_VK_PRESENT=fifo|mailbox|immediate: that one, if the driver has it */
 			const char *want = getenv("XRC_VK_PRESENT");
 			VkPresentModeKHR wm = !want ? ci.presentMode : !strcmp(want, "mailbox") ? VK_PRESENT_MODE_MAILBOX_KHR : !strcmp(want, "immediate") ? VK_PRESENT_MODE_IMMEDIATE_KHR : VK_PRESENT_MODE_FIFO_KHR;

@@ -165,6 +165,8 @@ void XRC_CC xo_00a96590(XCtx *c) {
 	xo_00a96590_body(c);
 	wlog_note(t0, xrc_qpc());
 }
+static int hf_live; /* (hifps1: XRC_FPS_CAP pacing ran last TickFrame: the game's own vblank wait returns at once) */
+static unsigned long long hf_vb_skips;
 static void XRC_CC xo_00a96590_body(XCtx *c) {
 	static XFn orig;
 	unsigned long long start, timeout;
@@ -175,6 +177,14 @@ static void XRC_CC xo_00a96590_body(XCtx *c) {
 	start = xrc_qpc();
 	if (!(GF(QpfCache, G_QPF_CACHE, init_flags_b0) & QPF_VALID)) { GF(QpfCache, G_QPF_CACHE, init_flags) |= QPF_VALID; GF(QpfCache, G_QPF_CACHE, freq_lo) = 10000000u; GF(QpfCache, G_QPF_CACHE, freq_hi) = 0; } /* QueryPerformanceFrequency */
 	timeout = GF(QpfCache, G_QPF_CACHE, freq) / 50ull;
+	if (hf_live) { /* FrameClock::WaitForFrame only calls this after a frame longer than 1/59.94 s (n == 1): no
+		* wait at all, the limiter in GetQuantizedDelta owns the pacing (the answer = the 20 ms timeout, as the stub's) */
+		hf_vb_skips++;
+		c->eax = (u32)timeout;
+		c->edx = (u32)(timeout >> 32);
+		xrc_cdecl_ret(c);
+		return;
+	}
 	if (xrc_raster_mode()) { /* the modeled vblank, else the 20 ms cap */
 		unsigned long long vb = rs_next_vblank(start);
 		if (vb - start < timeout) { /* the vblank exit: eax = the last poll's 0 */
@@ -287,6 +297,134 @@ static void pt_row(unsigned long long pre, unsigned long long post, unsigned lon
 	}
 	pt_prev_post = post; pt_pr0 = pr; pt_fw0 = fw; pt_g0 = g > 0 ? g : 0;
 }
+/* ------------------------------------------------------------------------------- hifps1: any refresh rate
+ * XRC_FPS_CAP=<hz> (e.g. 60, 120, 144, 165, 180, 240) or 0 / unlocked; unset = the fps60 pacing above, unchanged.
+ * Needs the game's Frame rate = Variable (FrameClock target fps > 45), like fps60.
+ * - Limiter: one high-resolution wait to a fixed-period schedule (period 1/cap s, kept in 1/10 ns so 144 Hz does not drift);
+ *   a late frame resyncs the schedule to now (no catch-up burst, no debt): the next frame gets a full period.
+ * - dt: the real time between two limiter exits, in the game's units (1/300000 s), not rounded to 1/59.94 s ticks
+ *   (GetQuantizedDelta's rounding gave 0-dt frames above 60 fps). The fraction is carried, so sum(dt) == wall time.
+ *   The game still clamps one frame to 20020 units (66.7 ms) in TickFrame.
+ * - The game's own wait (FrameClock::WaitForFrame -> 00a96590 after frames longer than 1/59.94 s) is skipped.
+ * - XRC_FPS_WHOLEMS=1 (default on with a cap): dt rounded to whole ms (300 units) with the remainder carried. The field
+ *   (FieldInterface::vf8 and the world-clock path fed by an int ms value) truncates dt to ms each frame; whole-ms dt makes
+ *   that exact at any rate (at 144 fps it alternates 6 / 7 ms). =0: exact units.
+ * - XRC_FPS_DTSCALE=<f>: test only: dt *= f (dt-driven things slow down, frame-driven ones keep speed); with
+ *   XRC_FPS_DTSCALE_AT=t0,t1 only from t0 to t1 s after boot (=0: whatever still moves is advanced per frame).
+ * - XRC_FPS_EDGE=present (default): the wait sits just before the game's Present, so frames leave on the schedule and
+ *   dt = the time between presents; =tick: the wait in GetQuantizedDelta (after Present, as fps60 does).
+ * - XRC_FPS_MON=1 (default on with a cap): every 5 s one line: fps, frames over 2x the period, game dt / wall, world
+ *   clock rate, field ms / wall. */
+static int hf_cap = -2, hf_ms = 1, hf_mon = 0;
+static double hf_scale = 1.0, hf_sc_t0 = -1, hf_sc_t1 = 1e30;
+static unsigned long long hf_period_q, hf_next_q; /* 1e-9 s units (QPC*100) */
+static unsigned long long hf_prev;
+static double hf_carry;
+static void hifps_init(void) {
+	const char *e = getenv("XRC_FPS_CAP");
+	if (!e || !*e) hf_cap = -1;
+	else if (!strcmp(e, "unlocked") || !strcmp(e, "0") || !strcmp(e, "off")) hf_cap = 0;
+	else { hf_cap = atoi(e); if (hf_cap < 20) hf_cap = 20; if (hf_cap > 1000) hf_cap = 1000; }
+	if (hf_cap > 0) hf_period_q = (unsigned long long)(1e9 / hf_cap + 0.5);
+	e = getenv("XRC_FPS_WHOLEMS"); hf_ms = !(e && e[0] == '0');
+	e = getenv("XRC_FPS_DTSCALE"); if (e) hf_scale = atof(e);
+	e = getenv("XRC_FPS_DTSCALE_AT"); if (e) { hf_sc_t0 = atof(e); e = strchr(e, ','); if (e) hf_sc_t1 = atof(e + 1); } /* (t0,t1 s after boot) */
+	e = getenv("XRC_FPS_MON"); hf_mon = e ? e[0] != '0' : hf_cap >= 0;
+	if (hf_cap >= 0) fprintf(stderr, "xrc: hifps: cap %d Hz%s, dt %s, scale %g (XRC_FPS_CAP; needs Frame rate = Variable)\n",
+	                         hf_cap, hf_cap ? "" : " (unlocked)", hf_ms ? "whole ms + carry" : "exact units + carry", hf_scale);
+}
+/* vk_d3d9.c (swap chain create): 1 when the cap is above the window's display refresh, or unlocked */
+int xrc_hifps_want_immediate(void) {
+	int hz = 0, want;
+	if (hf_cap == -2) hifps_init();
+	if (hf_cap < 0) return 0;
+#ifdef _WIN32
+	{
+		MONITORINFOEXA mi; DEVMODEA dm;
+		memset(&mi, 0, sizeof mi); mi.cbSize = sizeof mi;
+		memset(&dm, 0, sizeof dm); dm.dmSize = sizeof dm;
+		if (GetMonitorInfoA(MonitorFromWindow((HWND)xrc_view_window, MONITOR_DEFAULTTOPRIMARY), (MONITORINFO *)&mi)
+		    && EnumDisplaySettingsA(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm)) hz = (int)dm.dmDisplayFrequency;
+	}
+#endif
+	/* default IMMEDIATE for any cap: with FIFO + present wait, a present right after the limiter blocked 5-6 ms per frame
+	 * in tests (cap 60: 46.5 fps, 12.8% of frames > 2x; IMMEDIATE cap 144: p99 7.4 ms). XRC_FPS_VSYNC=1: FIFO when the
+	 * cap is at or below the display's refresh (unverified on a real high-refresh monitor). */
+	{ const char *v = getenv("XRC_FPS_VSYNC"); want = !(v && v[0] == '1') || hf_cap == 0 || hz <= 1 || hf_cap > hz + 1; }
+	fprintf(stderr, "xrc: hifps: display %d Hz, cap %d: %s\n", hz, hf_cap, want ? "IMMEDIATE (vsync off)" : "FIFO (vsync)");
+	return want;
+}
+static int hf_edge = -1; /* 1: the wait is just before the game's Present (XRC_FPS_EDGE=present, default); 0: in GetQuantizedDelta */
+static unsigned long long hf_exit, hf_exit_n, hf_seen_n;
+static long long hf_lastU;
+static DWORD hf_main_tid;
+static void hifps_limit(void) {
+	unsigned long long now = xrc_qpc(), pre = now, post, tgt_t = 0;
+	if (hf_cap > 0) {
+		unsigned long long nq = now * 100ull;
+		if (!hf_next_q) hf_next_q = nq;
+		hf_next_q += hf_period_q;
+		if (nq < hf_next_q) { tgt_t = hf_next_q / 100ull; wait_until(tgt_t); }
+		else hf_next_q = nq; /* late: resync, no catch-up */
+	}
+	post = xrc_qpc();
+	pt_row(pre, post, tgt_t, (int)hf_lastU);
+	hf_exit = post; hf_exit_n++;
+}
+/* hle_d3d9.c v_Present: the limiter, once per TickFrame, on the main thread, so presents leave on the schedule */
+void xrc_hifps_pre_present(void) {
+	if (!hf_live || hf_edge != 1 || GetCurrentThreadId() != hf_main_tid || hf_exit_n != hf_seen_n) return;
+	hifps_limit();
+}
+static void hifps_tick(u32 out, unsigned long long now) {
+	unsigned long long post;
+	double u;
+	long long U;
+	(void)now;
+	if (hf_edge < 0) { const char *e = getenv("XRC_FPS_EDGE"); hf_edge = !(e && !strcmp(e, "tick")); fprintf(stderr, "xrc: hifps: wait %s\n", hf_edge ? "before Present" : "in GetQuantizedDelta"); }
+	hf_live = 1;
+	hf_main_tid = GetCurrentThreadId();
+	if (pt_on < 0) { pt_on = getenv("XRC_PACE_TRACE") != 0; pt_fix = 1; }
+	if (!hf_edge || hf_exit_n == hf_seen_n) hifps_limit(); /* (no present since the last tick: wait here) */
+	hf_seen_n = hf_exit_n;
+	post = hf_exit;
+	if (!hf_prev) hf_prev = post - 166833ull;
+	{ double ts = (double)(post - 600000000ull) / 1e7, sc = ts >= hf_sc_t0 && ts < hf_sc_t1 ? hf_scale : 1.0;
+	  u = (double)(post - hf_prev) * 0.03 * sc + hf_carry; } /* 100 ns -> 1/300000 s */
+	hf_prev = post;
+	if (u > 600000.0) u = 600000.0; /* (2 s: a stall; TickFrame clamps to 20020 anyway) */
+	U = hf_ms ? (long long)(u / 300.0) * 300 : (long long)u;
+	hf_carry = u - (double)U;
+	if (U < 0) U = 0;
+	M32(out) = (u32)U;
+	hf_lastU = U;
+}
+static unsigned long long hm_t0, hm_w0, hm_n, hm_long;
+static double hm_dt, hm_ms, hm_maxiv;
+static unsigned long long hm_prev;
+static void hf_monitor(u32 out, u32 fc) {
+	unsigned long long now = xrc_qpc(), w = 0;
+	u32 fom = M32(0x24c9d00u), tm = 0, fi;
+	if (hf_mon < 1) return;
+	if (fom) tm = M32(fom + 0x18e74u);
+	if (tm) w = M64(tm + 0x50u);
+	fi = M32(0x234f130u);
+	if (!hm_t0) { hm_t0 = now; hm_w0 = w; hm_prev = now; return; }
+	{ double iv = (double)(now - hm_prev) / 1e4, per = hf_cap > 0 ? 1000.0 / hf_cap : 1000.0 / 59.94;
+	  if (iv > 2.0 * per) hm_long++; if (iv > hm_maxiv) hm_maxiv = iv; }
+	hm_prev = now;
+	hm_n++; hm_dt += (double)(int)M32(out) / 300.0;
+	if (fi) hm_ms += (double)(int)M32(fi + 0x4cu);
+	if (now - hm_t0 >= 50000000ull) {
+		double wall = (double)(now - hm_t0) / 1e4; /* ms */
+		long long dw = (long long)(w - hm_w0);
+		unsigned long long h24 = w ? (24ull * w / 1080000000ull) % 24ull : 0, m60 = w ? (24ull * w / 18000000ull) % 60ull : 0;
+		fprintf(stderr, "xrc: hifps mon: %.1f fps, %llu frames > 2x period (max %.1f ms); game dt/wall %.4f; world +%lld units = %.4f per wall unit (clock %02llu:%02llu); field ms/wall %.4f; FC0 %g FC4 %g; vb skips %llu; at %.1f s\n",
+		        hm_n * 1000.0 / wall, hm_long, hm_maxiv, hm_dt / wall, dw, (double)dw / (wall * 300.0), h24, m60, hm_ms / wall,
+		        fc ? *(float *)(XM + fc) : -1.0f, fc ? *(float *)(XM + fc + 4) : -1.0f, hf_vb_skips, (double)(now - 600000000ull) / 1e7);
+		hm_t0 = now; hm_w0 = w; hm_n = hm_long = 0; hm_dt = hm_ms = hm_maxiv = 0;
+	}
+}
 static void fps60_tick(u32 out) {
 	u32 fc = M32(G_FRAME_CLOCK);
 	float tgt = fc ? GFN(FrameClock, fc, target_fps) : 0.0f;
@@ -307,7 +445,10 @@ static void fps60_tick(u32 out) {
 	}
 	f60_prev = now;
 	if (pt_on < 0) { pt_on = getenv("XRC_PACE_TRACE") != 0; pt_fix = !(getenv("XRC_PACE_FIX") && getenv("XRC_PACE_FIX")[0] == '0'); if (pt_on || pt_fix) fprintf(stderr, "xrc: pace6: trace %d fix %d\n", pt_on, pt_fix); }
-	if (!f60_on || tgt <= 45.0f) { f60_sched = 0; pt_row(now, now, 0, 0); return; }
+	if (hf_cap == -2) hifps_init();
+	if (hf_cap >= 0 && tgt > 45.0f) { f60_sched = 0; hifps_tick(out, now); hf_monitor(out, fc); return; }
+	hf_live = 0;
+	if (!f60_on || tgt <= 45.0f) { f60_sched = 0; pt_row(now, now, 0, 0); hf_monitor(out, fc); return; }
 	{
 		const unsigned long long P = 166833ull; /* QPC (10 MHz) per 1/59.94 s */
 		long long k = 1; unsigned long long pre = now, tgt_t = 0;
@@ -322,6 +463,7 @@ static void fps60_tick(u32 out) {
 		}
 		pt_row(pre, xrc_qpc(), tgt_t, (int)k);
 		M32(out) = (u32)(k * 5005);
+		hf_monitor(out, fc);
 	}
 }
 

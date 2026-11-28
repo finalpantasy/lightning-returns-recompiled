@@ -35,6 +35,7 @@ endorsed by Square Enix.
 - **Faster loading** (file I/O and load-path work).
 - **Audio fix.** In-game music and sound effects are back: the submix at stage 255 was never mixed.
 - **Draw-path speedup.** Fewer redundant state and bind calls, push descriptors for the used bindings only, and a sampler cache; `XRC_PROF_DRAW=1` logs a per-300-frame draw profile.
+- **High frame rates.** Settings > Display > "Frame rate limit": 120, 144, 165, 180, 240 or Unlocked (`XRC_FPS_CAP`), with a "VSync" row (`XRC_FPS_VSYNC`). The game gets the real time between frames, so game speed, UI speed and the in-game clock stay at real time. Default is 60, as before. Not yet tested in battles or cutscenes above 60 fps.
 - **Typed structs and naming.** The runtime's guest-memory accesses use named, size-checked structs (`src/runtime/guest_types.h`,
   about 100 structs with compile-time offset checks) instead of raw offsets, and `tools/names` plus `docs/` hold the naming work on the
   game's functions and data. Converted files compile to the same machine code as the raw versions.
